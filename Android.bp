@@ -6249,6 +6249,9 @@ cc_library_static {
         "webrtc_video_coding__webrtc_vp9",
         "webrtc_video_coding__webrtc_vp9_helpers",
     ],
+    export_static_lib_headers: [
+        "absl_algorithm_container",
+    ],
     arch: {
         arm: {
             whole_static_libs: [
