@@ -109,7 +109,7 @@ class RTCPSender final {
   RTCPSender(const RTCPSender&) = delete;
   RTCPSender& operator=(const RTCPSender&) = delete;
 
-  virtual ~RTCPSender();
+  ~RTCPSender();
 
   RtcpMode Status() const RTC_LOCKS_EXCLUDED(mutex_rtcp_sender_);
   void SetRTCPStatus(RtcpMode method) RTC_LOCKS_EXCLUDED(mutex_rtcp_sender_);

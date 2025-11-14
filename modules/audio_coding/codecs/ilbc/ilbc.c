@@ -256,7 +256,7 @@ size_t WebRtcIlbcfix_DecodePlc(IlbcDecoderInstance* iLBCdec_inst,
                                int16_t* decoded,
                                size_t noOfLostFrames) {
   size_t i;
-  uint16_t dummy;
+  uint16_t dummy = 0;
 
   for (i=0;i<noOfLostFrames;i++) {
     // PLC decoding shouldn't fail, because there is no external input data
