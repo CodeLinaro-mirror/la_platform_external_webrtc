@@ -6439,4 +6439,7 @@ cc_library_static {
             ],
         },
     },
+    visibility: [
+        "//vendor:__subpackages__",
+    ],
 }
