@@ -232,6 +232,7 @@ cc_library(
     deps = [
         "//api/test/metrics:metric",
         "//api/test/metrics:metrics_exporter",
+        "//rtc_base:safe_conversions",
         "//rtc_base:stringutils",
         "//test:test_flags",
         "@abseil-cpp//absl/flags:flag",

@@ -8,6 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "api/webrtc_sdp.h"
+
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -51,11 +53,6 @@
 #include "test/gmock.h"
 #include "test/gtest.h"
 
-#ifdef WEBRTC_ANDROID
-#include "pc/test/android_test_initializer.h"
-#endif
-#include "api/webrtc_sdp.h"
-
 namespace webrtc {
 
 namespace {
@@ -64,8 +61,10 @@ using ::testing::ElementsAre;
 using ::testing::Field;
 using ::testing::HasSubstr;
 using ::testing::IsNull;
+using ::testing::Not;
 using ::testing::NotNull;
 using ::testing::Property;
+using ::testing::SizeIs;
 
 constexpr uint32_t kDefaultSctpPort = 5000;
 constexpr uint16_t kUnusualSctpPort = 9556;
@@ -975,9 +974,6 @@ std::unique_ptr<IceCandidate> NewCandidate(absl::string_view sdp,
 class WebRtcSdpTest : public ::testing::Test {
  public:
   WebRtcSdpTest() {
-#ifdef WEBRTC_ANDROID
-    InitializeAndroidObjects();
-#endif
     // AudioContentDescription
     audio_desc_ = CreateAudioContentDescription();
     StreamParams audio_stream;
@@ -2090,6 +2086,18 @@ TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithoutCandidates) {
   EXPECT_EQ(SdpSerialize(MakeDescriptionWithoutCandidates()), kSdpString);
 }
 
+// Tests that each m= section is serialized with its own transport info even
+// when the transport infos are not stored in the same order as the contents.
+TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithTransportInfosOutOfOrder) {
+  TransportInfo audio_transport_info =
+      *desc_.GetTransportInfoByName(kAudioContentName);
+  ASSERT_TRUE(desc_.RemoveTransportInfoByName(kAudioContentName));
+  desc_.AddTransportInfo(audio_transport_info);
+  ASSERT_EQ(desc_.transport_infos()[0].content_name, kVideoContentName);
+  TestMismatch(std::string(kSdpFullString),
+               SdpSerialize(NewSessionDescriptionWithCandidates()));
+}
+
 TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithBundles) {
   ContentGroup group1(GROUP_TYPE_BUNDLE);
   group1.AddContentName(kAudioContentName);
@@ -2366,6 +2374,21 @@ TEST_F(WebRtcSdpTest, DeserializeSessionDescription) {
   // Deserialize & Verify
   EXPECT_TRUE(
       CompareSessionDescription(jdesc_, SdpDeserialize(kSdpFullString)));
+}
+
+// Tests that duplicate a=candidate lines within one m= section only add one
+// candidate to the candidate collection of that m= section.
+TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithDuplicateCandidate) {
+  std::string sdp = kSdpFullString;
+  const std::string candidate_line =
+      "a=candidate:a0+B/1 1 udp 2130706432 192.168.1.5 1234 typ host "
+      "generation 2\r\n";
+  InjectAfter(candidate_line, candidate_line, &sdp);
+  std::unique_ptr<SessionDescriptionInterface> jdesc = SdpDeserialize(sdp);
+  ASSERT_THAT(jdesc, NotNull());
+  ASSERT_THAT(jdesc->candidates(0), NotNull());
+  EXPECT_EQ(jdesc->candidates(0)->count(), jdesc_->candidates(0)->count());
+  EXPECT_TRUE(CompareSessionDescription(jdesc_, jdesc));
 }
 
 TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithoutMline) {
@@ -3387,15 +3410,16 @@ TEST_F(WebRtcSdpTest, DeserializeSerializeRtcpXrRcvrRtt) {
   ASSERT_THAT(acd, NotNull());
   EXPECT_TRUE(acd->receive_non_sender_rtt());
 
-  // Serialize: the flag emits BOTH the standard rtcp-xr and the legacy
-  // rtcp-fb rrtr wire forms (interim backward-compat).
+  // Serialize: the flag emits the standard rtcp-xr form only. The legacy
+  // rtcp-fb rrtr is never generated from it.
   std::string reserialized = SdpSerialize(*jdesc);
   EXPECT_THAT(reserialized, HasSubstr("a=rtcp-xr:rcvr-rtt=all"));
-  EXPECT_THAT(reserialized, HasSubstr("a=rtcp-fb:111 rrtr"));
+  EXPECT_THAT(reserialized, Not(HasSubstr("rrtr")));
 }
 
-// The legacy non-standard a=rtcp-fb:<pt> rrtr also sets the flag on parse.
-TEST_F(WebRtcSdpTest, DeserializeLegacyRtcpFbRrtr) {
+// The legacy non-standard a=rtcp-fb:<pt> rrtr stays a codec feedback param,
+// separate from the rcvr-rtt flag, and round-trips unchanged.
+TEST_F(WebRtcSdpTest, DeserializeSerializeLegacyRtcpFbRrtr) {
   const char kSdpWithFbRrtr[] =
       "v=0\r\n"
       "o=- 18446744069414584320 18446462598732840960 IN IP4 127.0.0.1\r\n"
@@ -3410,7 +3434,14 @@ TEST_F(WebRtcSdpTest, DeserializeLegacyRtcpFbRrtr) {
   const AudioContentDescription* acd =
       GetFirstAudioContentDescription(jdesc->description());
   ASSERT_THAT(acd, NotNull());
-  EXPECT_TRUE(acd->receive_non_sender_rtt());
+  EXPECT_FALSE(acd->receive_non_sender_rtt());
+  ASSERT_THAT(acd->codecs(), SizeIs(1));
+  EXPECT_TRUE(acd->codecs()[0].HasFeedbackParam(
+      FeedbackParam(kRtcpFbParamRrtr, kParamValueEmpty)));
+
+  std::string reserialized = SdpSerialize(*jdesc);
+  EXPECT_THAT(reserialized, HasSubstr("a=rtcp-fb:111 rrtr"));
+  EXPECT_THAT(reserialized, Not(HasSubstr("a=rtcp-xr")));
 }
 
 TEST_F(WebRtcSdpTest, DeserializeVideoFmtp) {
@@ -4021,29 +4052,6 @@ TEST_F(WebRtcSdpTest, DeserializingNegativeBandwidthLimitFails) {
   ExpectParseFailure(std::string(kSdpWithNegativeBandwidth), "b=AS:-1000");
 }
 
-// An exception to the above rule: a value of -1 for b=AS should just be
-// ignored, resulting in "kAutoBandwidth" in the deserialized object.
-// Applications historically may be using "b=AS:-1" to mean "no bandwidth
-// limit", but this is now what ommitting the attribute entirely will do, so
-// ignoring it will have the intended effect.
-TEST_F(WebRtcSdpTest, BandwidthLimitOfNegativeOneIgnored) {
-  static const char kSdpWithBandwidthOfNegativeOne[] =
-      "v=0\r\n"
-      "o=- 18446744069414584320 18446462598732840960 IN IP4 127.0.0.1\r\n"
-      "s=-\r\n"
-      "t=0 0\r\n"
-      "m=video 3457 RTP/SAVPF 120\r\n"
-      "b=AS:-1\r\n";
-
-  std::unique_ptr<SessionDescriptionInterface> jdesc_output =
-      SdpDeserialize(kSdpWithBandwidthOfNegativeOne);
-  ASSERT_THAT(jdesc_output, NotNull());
-  const VideoContentDescription* vcd =
-      GetFirstVideoContentDescription(jdesc_output->description());
-  ASSERT_THAT(vcd, NotNull());
-  EXPECT_EQ(kAutoBandwidth, vcd->bandwidth());
-}
-
 TEST_F(WebRtcSdpTest, SdpBandwidthMetrics) {
   metrics::Reset();
   auto get_sdp = [](absl::string_view value) {
@@ -4057,10 +4065,11 @@ TEST_F(WebRtcSdpTest, SdpBandwidthMetrics) {
     return sb.Release();
   };
 
-  // kSdpBandwidthNegativeOne
+  // This used to be kSdpBandwidthNegativeOne, but special
+  // treatment is removed.
   SdpDeserialize(get_sdp("-1"));
   EXPECT_METRIC_EQ(1, metrics::NumEvents("WebRTC.PeerConnection.SdpBandwidth",
-                                         kSdpBandwidthNegativeOne));
+                                         kSdpBandwidthNegative));
 
   // kSdpBandwidthZero
   SdpDeserialize(get_sdp("0"));
@@ -4079,7 +4088,7 @@ TEST_F(WebRtcSdpTest, SdpBandwidthMetrics) {
 
   // kSdpBandwidthNegative
   SdpDeserialize(get_sdp("-1000"));
-  EXPECT_METRIC_EQ(1, metrics::NumEvents("WebRTC.PeerConnection.SdpBandwidth",
+  EXPECT_METRIC_EQ(2, metrics::NumEvents("WebRTC.PeerConnection.SdpBandwidth",
                                          kSdpBandwidthNegative));
 
   // kSdpBandwidthParseFailure
@@ -4358,6 +4367,36 @@ TEST_F(WebRtcSdpTest, DeserializeMsidAttributeWithoutAppDataDuplicate) {
   EXPECT_EQ(stream.stream_ids()[0], "stream_id");
   // Track id is randomly generated.
   EXPECT_NE(stream.id, "");
+}
+
+// Tests that with a=msid signaling all SSRCs of an m= section end up in a
+// single StreamParams, and that a track id is generated when a=msid has no
+// appdata.
+TEST_F(WebRtcSdpTest, DeserializeMsidAttributeWithoutAppDataWithSsrcs) {
+  std::string sdp =
+      "v=0\r\n"
+      "o=- 18446744069414584320 18446462598732840960 IN IP4 127.0.0.1\r\n"
+      "s=-\r\n"
+      "t=0 0\r\n"
+      "m=video 9 RTP/SAVPF 96\r\n"
+      "c=IN IP4 0.0.0.0\r\n"
+      "a=rtpmap:96 VP8/90000\r\n"
+      "a=msid:stream_id\r\n"
+      "a=ssrc-group:FID 1 2\r\n"
+      "a=ssrc:1 cname:stream_cname\r\n"
+      "a=ssrc:2 cname:stream_cname\r\n";
+
+  std::unique_ptr<SessionDescriptionInterface> jdesc_output =
+      SdpDeserialize(sdp);
+  ASSERT_THAT(jdesc_output, NotNull());
+  const StreamParamsVec& streams =
+      jdesc_output->description()->contents()[0].media_description()->streams();
+  ASSERT_THAT(streams, SizeIs(1));
+  EXPECT_THAT(streams[0].ssrcs, ElementsAre(1u, 2u));
+  EXPECT_EQ(streams[0].cname, "stream_cname");
+  EXPECT_THAT(streams[0].stream_ids(), ElementsAre("stream_id"));
+  // Track id is randomly generated.
+  EXPECT_NE(streams[0].id, "");
 }
 
 TEST_F(WebRtcSdpTest, DeserializeMsidAttributeWithoutAppDataMixed) {

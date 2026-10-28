@@ -39,7 +39,7 @@ To ensure relative labels (e.g. `//rtc_base:checks` inside WebRTC) resolve corre
 WebRTC does not use traditional SemVer (e.g. `1.2.3`). Instead, we map the Chromium Milestone to the SemVer major version, following the format:
 `[Milestone].[Minor].[Patch].aemu`
 
-*   **Current Version**: `152.0.0.aemu` (maps to Chromium Milestone **M152**, upstream revision **48058**, commit `732e34399f`).
+*   **Current Version**: `152.0.0.aemu` (upstream revision **49062**, commit `5c21ba5e3e`).
 *   **Rationale**:
     *   **SemVer Compatible**: Allows Bazel to compare versions correctly (e.g., `152.0.0.aemu` < `153.0.0.aemu`).
     *   **Upgradable**: If we need to release patches for the same milestone, we can increment minor/patch (e.g., `152.0.1.aemu`).
@@ -88,10 +88,11 @@ To support this without patching the BCR modules:
 ### The Shim Macro (`third_party/shims.bzl`):
 The macro takes a list of headers and a target subdirectory path, generates empty forwarding files that redirect to the BCR headers using `#include`, and exposes a `cc_library` with `include_prefix` set to the legacy path.
 
-### Implemented Shims:
+### Implemented Shims & Vendored Libraries:
 *   **`//third_party/opus`**: Replaces `@opus` dependency. Generates forwarding headers for `opus.h`, `opus_defines.h`, `opus_multistream.h`, `opus_types.h`.
 *   **`//third_party/libyuv`**: Replaces `@libyuv` dependency. Generates 25+ forwarding headers (e.g., `libyuv.h`, `libyuv/basic_types.h`, etc.) under `third_party/libyuv/include/`.
 *   **`//third_party/libaom`**: Replaces `@aom` dependency. Generates forwarding headers under `third_party/libaom/source/libaom/`.
+*   **`//third_party/sframe`**: Vendored under `third_party/sframe/src/` (compiled with `local_defines = ["BORINGSSL"]` against `@boringssl//:crypto` so `-DBORINGSSL` does not leak to downstream targets). Because `third_party/` is gitignored, `third_party/sframe` must be force-added (`git add -f third_party/sframe`).
 
 *Maintenance action*: When upgrading WebRTC, if compilation fails due to missing headers from these libraries, add the missing header names to the macro instantiation in the respective `BUILD.bazel` file under `third_party/webrtc/third_party/<library>/BUILD.bazel`.
 

@@ -26,6 +26,14 @@ filegroup(
 )
 
 cc_library(
+    name = "sequence_number_unwrapper",
+    hdrs = ["sequence_number_unwrapper.h"],
+    compatible_with = ["//buildenv/target:non_prod"],
+    visibility = ["//visibility:public"],
+    deps = ["//rtc_base:sequence_number_util"],
+)
+
+cc_library(
     name = "numerics",
     srcs = ["samples_stats_counter.cc"],
     hdrs = ["samples_stats_counter.h"],

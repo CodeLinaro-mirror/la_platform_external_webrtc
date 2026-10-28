@@ -79,7 +79,6 @@ cc_library(
         "//rtc_base:checks",
         "//rtc_base:macromagic",
         "//rtc_base/system:no_unique_address",
-        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/synchronization",
     ],
 )
@@ -171,8 +170,4 @@ cc_library(
         windows = ["WEBRTC_WIN"],
     ),
     visibility = ["//:__subpackages__"],
-    deps = [
-        "@abseil-cpp//absl/base:config",
-        "@abseil-cpp//absl/base:core_headers",
-    ],
 )

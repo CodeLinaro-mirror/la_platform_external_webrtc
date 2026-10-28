@@ -66,6 +66,14 @@ cc_library(
 )
 
 cc_library(
+    name = "sframe_options",
+    hdrs = ["sframe_options.h"],
+    compatible_with = ["//buildenv/target:non_prod"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//modules/sframe:sframe_encryption_config"],
+)
+
+cc_library(
     name = "call_interfaces",
     srcs = [
         "audio_receive_stream.cc",
@@ -125,6 +133,7 @@ cc_library(
         "//api:network_state_predictor_api",
         "//api:ref_count",
         "//api:rtp_headers",
+        "//api:rtp_packet_info",
         "//api:rtp_parameters",
         "//api:rtp_sender_interface",
         "//api:scoped_refptr",
@@ -147,9 +156,11 @@ cc_library(
         "//api/units:time_delta",
         "//api/units:timestamp",
         "//api/video:video_stream_encoder",
+        "//api/video/timing:video_jitter_timing_factory",
         "//call:audio_sender_interface",
         "//call:receive_stream_interface",
         "//call:rtp_interfaces",
+        "//call:sframe_options",
         "//call:video_receive_stream_api",
         "//call:video_send_stream_api",
         "//modules/async_audio_processing",
@@ -239,6 +250,7 @@ cc_library(
         "//api/units:data_size",
         "//api/units:time_delta",
         "//api/units:timestamp",
+        "//call:sframe_options",
         "//common_video:frame_counts",
         "//modules/congestion_controller/rtp:congestion_controller_feedback_stats",
         "//modules/rtp_rtcp:rtp_rtcp_format",
@@ -409,6 +421,7 @@ cc_library(
         "//common_video/generic_frame_descriptor",
         "//logging:rtc_event_bwe",
         "//modules:module_fec_api",
+        "//modules/congestion_controller:ect1_policy",
         "//modules/congestion_controller/rtp:congestion_controller_feedback_stats",
         "//modules/congestion_controller/rtp:control_handler",
         "//modules/congestion_controller/rtp:transport_feedback",
@@ -531,6 +544,7 @@ cc_library(
         "//api:sequence_checker",
         "//api/transport:network_control",
         "//api/units:data_rate",
+        "//api/units:data_size",
         "//api/units:time_delta",
         "//rtc_base:checks",
         "//rtc_base:logging",
@@ -549,12 +563,8 @@ cc_library(
     srcs = [
         "call.cc",
         "flexfec_receive_stream_impl.cc",
-        "receive_time_calculator.cc",
     ],
-    hdrs = [
-        "flexfec_receive_stream_impl.h",
-        "receive_time_calculator.h",
-    ],
+    hdrs = ["flexfec_receive_stream_impl.h"],
     compatible_with = ["//buildenv/target:non_prod"],
     copts = platform_select(
         _all = [
@@ -608,6 +618,8 @@ cc_library(
         "//api/units:time_delta",
         "//api/units:timestamp",
         "//api/video:video_stream_encoder",
+        "//api/video/timing:video_jitter_timing_factory",
+        "//api/video/timing:video_jitter_timing_interface",
         "//audio",
         "//call:bitrate_allocator",
         "//call:call_interfaces",
@@ -710,6 +722,7 @@ cc_library(
         "//rtc_base/containers:flat_map",
         "//rtc_base/containers:flat_set",
         "//system_wrappers:metrics",
+        "@abseil-cpp//absl/base:nullability",
         "@abseil-cpp//absl/strings",
     ],
 )
@@ -847,6 +860,7 @@ cc_library(
     deps = [
         "//api:frame_transformer_interface",
         "//api:rtp_headers",
+        "//api:rtp_packet_info",
         "//api:scoped_refptr",
         "//api:transport_api",
         "//api/crypto:frame_decryptor_interface",
@@ -862,6 +876,7 @@ cc_library(
         "//common_video:frame_counts",
         "//modules/rtp_rtcp:rtp_rtcp_format",
         "//rtc_base:stringutils",
+        "@abseil-cpp//absl/functional:any_invocable",
     ],
 )
 

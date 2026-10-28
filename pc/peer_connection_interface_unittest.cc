@@ -62,16 +62,20 @@
 #include "media/base/media_config.h"
 #include "media/base/stream_params.h"
 #include "p2p/base/p2p_constants.h"
+#include "p2p/base/p2p_transport_channel.h"
 #include "p2p/base/port.h"
 #include "p2p/base/port_allocator.h"
 #include "p2p/base/transport_description.h"
 #include "p2p/base/transport_info.h"
+#include "p2p/dtls/dtls_transport_internal.h"
 #include "p2p/test/fake_port_allocator.h"
 #include "pc/audio_track.h"
+#include "pc/jsep_transport_controller.h"
 #include "pc/media_session.h"
 #include "pc/media_stream.h"
 #include "pc/peer_connection.h"
 #include "pc/peer_connection_factory.h"
+#include "pc/peer_connection_proxy.h"
 #include "pc/rtp_media_utils.h"
 #include "pc/rtp_sender.h"
 #include "pc/rtp_sender_proxy.h"
@@ -97,10 +101,6 @@
 #include "test/gtest.h"
 #include "test/run_loop.h"
 #include "test/wait_until.h"
-
-#ifdef WEBRTC_ANDROID
-#include "pc/test/android_test_initializer.h"
-#endif
 
 namespace webrtc {
 namespace {
@@ -616,10 +616,8 @@ class MockTrackObserver : public ObserverInterface {
 class PeerConnectionFactoryForTest : public PeerConnectionFactory {
  public:
   static scoped_refptr<PeerConnectionFactoryForTest>
-  CreatePeerConnectionFactoryForTest(Thread* network_thread,
-                                     Thread* worker_thread) {
+  CreatePeerConnectionFactoryForTest(Thread* network_thread) {
     PeerConnectionFactoryDependencies dependencies;
-    dependencies.worker_thread = worker_thread;
     dependencies.network_thread = network_thread;
     dependencies.signaling_thread = Thread::Current();
     // Use fake audio device module since we're only testing the interface
@@ -646,11 +644,7 @@ class PeerConnectionInterfaceBaseTest : public ::testing::Test {
       : env_(CreateTestEnvironment()),
         vss_(new VirtualSocketServer()),
         main_(vss_.get()),
-        sdp_semantics_(sdp_semantics) {
-#ifdef WEBRTC_ANDROID
-    InitializeAndroidObjects();
-#endif
-  }
+        sdp_semantics_(sdp_semantics) {}
 
   void SetUp() override {
     // Use fake audio capture module since we're only testing the interface
@@ -665,7 +659,6 @@ class PeerConnectionInterfaceBaseTest : public ::testing::Test {
 
     PeerConnectionFactoryDependencies dependencies;
     dependencies.network_thread = network_thread_.get();
-    dependencies.worker_thread = worker_thread_.get();
     dependencies.signaling_thread = Thread::Current();
     dependencies.socket_factory = network_thread_->socketserver();
     dependencies.adm =
@@ -2416,6 +2409,43 @@ TEST_P(PeerConnectionInterfaceTest,
   });
 }
 
+// Test that applying a local answer lets the new transports take sessions from
+// the ICE candidate pool before the rest of the pool is discarded (RFC 8829,
+// sections 3.5.4 and 5.11).
+TEST_P(PeerConnectionInterfaceTest,
+       LocalAnswerTakesPooledSessionBeforePoolIsDiscarded) {
+  CreatePeerConnection();
+  PeerConnectionInterface::RTCConfiguration config = pc_->GetConfiguration();
+  config.ice_candidate_pool_size = 1;
+  EXPECT_TRUE(pc_->SetConfiguration(config).ok());
+
+  AddAudioTrack(kAudioTracks[0], {kStreamId1});
+  CreateOfferAsRemoteDescription();
+  CreateAnswerAsLocalDescription();
+
+  const ContentInfos& contents =
+      pc_->local_description()->description()->contents();
+  ASSERT_FALSE(contents.empty());
+  const std::string mid(contents[0].mid());
+  auto* pc_proxy =
+      static_cast<PeerConnectionProxyWithInternal<PeerConnectionInterface>*>(
+          pc_.get());
+  PeerConnection* pc = static_cast<PeerConnection*>(pc_proxy->internal());
+  network_thread_->BlockingCall([&] {
+    DtlsTransportInternal* dtls_transport =
+        pc->transport_controller_n()->GetDtlsTransport(mid);
+    ASSERT_NE(dtls_transport, nullptr);
+    // The default ICE transport factory creates P2PTransportChannels.
+    const auto* session = static_cast<const FakePortAllocatorSession*>(
+        static_cast<P2PTransportChannel*>(dtls_transport->ice_transport())
+            ->allocator_session());
+    ASSERT_NE(session, nullptr);
+    // Only a session that is taken from the pool gets new ICE parameters.
+    EXPECT_EQ(session->transport_info_update_count(), 1);
+    EXPECT_EQ(port_allocator_->GetPooledSession(), nullptr);
+  });
+}
+
 // After Close is called, pooled candidates should be discarded so as to not
 // waste network resources.
 TEST_P(PeerConnectionInterfaceTest, PooledSessionsDiscardedAfterClose) {
@@ -2461,6 +2491,12 @@ TEST_P(PeerConnectionInterfaceTest,
   modified_config = pc_->GetConfiguration();
   modified_config.continual_gathering_policy =
       PeerConnectionInterface::GATHER_CONTINUALLY;
+  error = pc_->SetConfiguration(modified_config);
+  EXPECT_EQ(RTCErrorType::INVALID_MODIFICATION, error.type());
+
+  modified_config = pc_->GetConfiguration();
+  modified_config.crypto_options.srtp.cryptex_policy =
+      CryptoOptions::Srtp::CryptexPolicy::kRequire;
   error = pc_->SetConfiguration(modified_config);
   EXPECT_EQ(RTCErrorType::INVALID_MODIFICATION, error.type());
 }
@@ -2845,9 +2881,14 @@ RTC_ALLOW_PLAN_B_DEPRECATION_END()
 // This tests that remote tracks are ended if a local session description is set
 // that rejects the media content type.
 TEST_P(PeerConnectionInterfaceTest, RejectMediaContent) {
-  // Munging allowed: kUnknownModification (section rejection)
+  // Munging allowed: kRejected (section rejection)
+  // TODO: bugs.webrtc.org/41480906 - This test rejects m= sections by
+  // munging content->rejected because it also runs under Plan B, where the
+  // transceiver API is unavailable. Once Plan B is removed, reject sections via
+  // transceiver->StopStandard() instead of munging and drop the
+  // WebRTC-NoSdpMangleAllowForTesting exception below.
   RTCConfiguration config;
-  CreatePeerConnection(config, "WebRTC-NoSdpMangleAllowForTesting/Enabled,1/");
+  CreatePeerConnection(config, "WebRTC-NoSdpMangleAllowForTesting/Enabled,39/");
   // First create and set a remote offer, then reject its video content in our
   // answer.
   CreateAndSetRemoteOffer(kSdpStringWithStream1PlanB);
@@ -4009,11 +4050,8 @@ class PeerConnectionMediaConfigTest : public ::testing::Test {
     network_thread_ = Thread::CreateWithSocketServer();
     network_thread_->SetName("NetworkThread", nullptr);
     ASSERT_TRUE(network_thread_->Start());
-    worker_thread_ = Thread::Create();
-    worker_thread_->SetName("WorkerThread", nullptr);
-    ASSERT_TRUE(worker_thread_->Start());
     pcf_ = PeerConnectionFactoryForTest::CreatePeerConnectionFactoryForTest(
-        network_thread_.get(), worker_thread_.get());
+        network_thread_.get());
   }
   MediaConfig TestCreatePeerConnection(const RTCConfiguration& config) {
     PeerConnectionDependencies pc_dependencies(&observer_);
@@ -4025,7 +4063,6 @@ class PeerConnectionMediaConfigTest : public ::testing::Test {
   }
 
   std::unique_ptr<Thread> network_thread_;
-  std::unique_ptr<Thread> worker_thread_;
   test::RunLoop signaling_thread_;
   scoped_refptr<PeerConnectionFactoryForTest> pcf_;
   MockPeerConnectionObserver observer_;

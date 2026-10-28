@@ -98,6 +98,7 @@ cc_library(
             "//api/audio:audio_frame_api",
             "//api/units:timestamp",
             "//common_audio:common_audio_c",
+            "//common_audio:common_audio_cc",
             "//common_audio:sinc_resampler",
             "//common_audio/third_party/ooura:fft_size_256",
             "//rtc_base:checks",
@@ -147,9 +148,6 @@ cc_library(
     srcs = [
         "ring_buffer.c",
         "signal_processing/auto_corr_to_refl_coef.c",
-        "signal_processing/auto_correlation.c",
-        "signal_processing/complex_bit_reverse.c",
-        "signal_processing/complex_fft.c",
         "signal_processing/copy_set_operations.c",
         "signal_processing/cross_correlation.c",
         "signal_processing/division_operations.c",
@@ -174,7 +172,6 @@ cc_library(
         "signal_processing/spl_inl.c",
         "signal_processing/spl_sqrt.c",
         "signal_processing/splitting_filter.c",
-        "signal_processing/sqrt_of_one_minus_x_squared.c",
         "signal_processing/vector_operations.c",
         "signal_processing/vector_scaling_operations.c",
         "vad/vad_core.c",
@@ -185,7 +182,6 @@ cc_library(
     ],
     hdrs = [
         "ring_buffer.h",
-        "signal_processing/complex_fft_tables.h",
         "signal_processing/include/signal_processing_library.h",
         "signal_processing/include/spl_inl.h",
         "signal_processing/include/spl_inl_armv7.h",
@@ -237,7 +233,6 @@ cc_library(
     ],
     deps = [
         "//common_audio:common_audio_c_arm_asm",
-        "//common_audio:common_audio_cc",
         "//common_audio/third_party/ooura:fft_size_256",
         "//common_audio/third_party/spl_sqrt_floor",
         "//rtc_base:checks",
@@ -249,7 +244,10 @@ cc_library(
 
 cc_library(
     name = "common_audio_cc",
-    srcs = ["signal_processing/dot_product_with_scale.cc"],
+    srcs = [
+        "signal_processing/auto_correlation.cc",
+        "signal_processing/dot_product_with_scale.cc",
+    ],
     hdrs = ["signal_processing/dot_product_with_scale.h"],
     compatible_with = ["//buildenv/target:non_prod"],
     copts = platform_select(
@@ -288,7 +286,11 @@ cc_library(
         "//:__subpackages__",
         "//common_audio:__pkg__",
     ],
-    deps = ["//rtc_base:safe_conversions"],
+    deps = [
+        "//common_audio:common_audio_c",
+        "//rtc_base:checks",
+        "//rtc_base:safe_conversions",
+    ],
 )
 
 cc_library(

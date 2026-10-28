@@ -25,6 +25,7 @@
     - [SCTP](/pc/g3doc/sctp_transport.md)
     - [Pacing buffer](/modules/pacing/g3doc/index.md)
   - Congestion control and bandwidth estimation
+    - [SCReAMv2](/modules/congestion_controller/scream/g3doc/index.md)
   - Audio
     - [NetEq](/modules/audio_coding/neteq/g3doc/index.md)
     - AudioEngine
@@ -42,7 +43,9 @@
   - [PeerConnection](/pc/g3doc/peer_connection.md)
   - Desktop capture
   - [Stats](/stats/g3doc/stats.md)
-  - [Logging](/logging/g3doc/rtc_event_log.md)
+  - Logging
+    - [Initialization](/g3doc/logging/initialization.md)
+    - [RTC event log](/logging/g3doc/rtc_event_log.md)
 - Testing
   - [Testing guidelines](/g3doc/testing.md)
   - Media Quality and performance

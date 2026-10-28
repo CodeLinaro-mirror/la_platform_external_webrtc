@@ -171,7 +171,6 @@ cc_library(
         "//rtc_base:type_traits",
         "//rtc_base:zero_memory",
         "@abseil-cpp//absl/algorithm:container",
-        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/strings:string_view",
     ],
 )
@@ -184,7 +183,6 @@ cc_library(
     deps = [
         "//rtc_base:checks",
         "//rtc_base/system:arch",
-        "@abseil-cpp//absl/base:core_headers",
     ],
 )
 
@@ -232,10 +230,7 @@ cc_library(
     hdrs = ["swap_queue.h"],
     compatible_with = ["//buildenv/target:non_prod"],
     visibility = ["//visibility:public"],
-    deps = [
-        "//rtc_base:checks",
-        "@abseil-cpp//absl/base:core_headers",
-    ],
+    deps = ["//rtc_base:checks"],
 )
 
 cc_library(
@@ -428,9 +423,11 @@ cc_library(
         "//rtc_base:buffer",
         "//rtc_base:checks",
         "//rtc_base:refcount",
+        "//rtc_base:span_helpers",
         "//rtc_base:type_traits",
         "//rtc_base/system:rtc_export",
         "@abseil-cpp//absl/algorithm:container",
+        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/strings:string_view",
     ],
 )
@@ -538,7 +535,6 @@ cc_library(
         "//rtc_base/synchronization:mutex",
         "//rtc_base/system:rtc_export",
         "//system_wrappers",
-        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/base:nullability",
         "@abseil-cpp//absl/strings:string_view",
         "@perfetto",
@@ -831,18 +827,6 @@ rust_library(
     ],
 )
 
-rust_library(
-    name = "rate_tracker_ffi_rust",
-    srcs = ["rate_tracker_ffi.rs"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//api/units:time_delta_rs",
-        "//api/units:timestamp_rs",
-        "//rtc_base:rate_tracker_rust",
-        "@rules_rust//:cxx_rustdeps",
-    ],
-)
-
 rtc_rust_cxx_bridge(
     name = "rate_tracker_ffi",
     src = "rate_tracker_ffi.rs",
@@ -854,7 +838,6 @@ rtc_rust_cxx_bridge(
         "//api/units:timestamp",
         "//api/units:timestamp_ffi",
         "//api/units:timestamp_rs",
-        "//rtc_base:rate_tracker_ffi_rust",
         "//rtc_base:rate_tracker_rust",
         "@rules_rust//:cxx_rustdeps",
     ],
@@ -1335,8 +1318,8 @@ cc_library(
         "//rtc_base:timeutils",
         "//rtc_base:type_traits",
         "//rtc_base/synchronization:mutex",
+        "//rtc_base/system:ignore_warnings",
         "//rtc_base/system:inline",
-        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/base:no_destructor",
         "@abseil-cpp//absl/strings",
         "@abseil-cpp//absl/strings:string_view",
@@ -1641,8 +1624,8 @@ cc_library(
     deps = [
         "//rtc_base:checks",
         "//rtc_base:safe_minmax",
+        "//rtc_base:span_helpers",
         "//rtc_base/system:rtc_export",
-        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/strings",
         "@abseil-cpp//absl/strings:string_view",
     ],
@@ -1953,6 +1936,14 @@ cc_library(
 )
 
 cc_library(
+    name = "sequence_number_util",
+    hdrs = ["numerics/sequence_number_util.h"],
+    compatible_with = ["//buildenv/target:non_prod"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//rtc_base:mod_ops"],
+)
+
+cc_library(
     name = "rtc_numerics",
     srcs = [
         "numerics/event_based_exponential_moving_average.cc",
@@ -1969,7 +1960,6 @@ cc_library(
         "numerics/rational.h",
         "numerics/running_statistics.h",
         "numerics/sequence_number_unwrapper.h",
-        "numerics/sequence_number_util.h",
     ],
     compatible_with = ["//buildenv/target:non_prod"],
     copts = platform_select(
@@ -2006,6 +1996,7 @@ cc_library(
     ),
     visibility = ["//:__subpackages__"],
     deps = [
+        "//api/numerics:sequence_number_unwrapper",
         "//rtc_base:checks",
         "//rtc_base:mod_ops",
     ],
@@ -2274,54 +2265,6 @@ cc_library(
 )
 
 cc_library(
-    name = "async_dns_resolver_unittests",
-    testonly = 1,
-    srcs = ["async_dns_resolver_unittest.cc"],
-    copts = platform_select(
-        _all = [
-            "-Wctad-maybe-unsupported",
-            "-Wshadow",
-        ],
-        apple = ["-fno-rtti"],
-        posix = ["-fno-exceptions"],
-        windows = ["-fno-rtti"],
-    ),
-    defines = platform_select(
-        _all = [
-            "PROTOBUF_ENABLE_DEBUG_LOGGING_MAY_LEAK_PII=0",
-            "RTC_ENABLE_H265",
-            "RTC_ENABLE_VP9",
-            "WEBRTC_ABSL_MUTEX",
-            "WEBRTC_DEPRECATE_PLAN_B",
-            "WEBRTC_ENABLE_AVX2",
-            "WEBRTC_ENABLE_PROTOBUF=1",
-            "WEBRTC_ENCODER_PSNR_STATS",
-            "WEBRTC_HAVE_SCTP",
-            "WEBRTC_NON_STATIC_TRACE_EVENT_HANDLERS=0",
-            "WEBRTC_STRICT_FIELD_TRIALS=0",
-            "WEBRTC_UNIT_TEST",
-        ],
-        apple = ["WEBRTC_MAC"],
-        arm64 = [
-            "WEBRTC_ARCH_ARM64",
-            "WEBRTC_HAS_NEON",
-        ],
-        linux = ["WEBRTC_LINUX"],
-        posix = ["WEBRTC_POSIX"],
-        windows = ["WEBRTC_WIN"],
-    ),
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//rtc_base:async_dns_resolver",
-        "//rtc_base:logging",
-        "//rtc_base:net_helpers",
-        "//rtc_base:socket_address",
-        "//test:run_loop",
-        "//test:test_support",
-    ],
-)
-
-cc_library(
     name = "ip_address",
     srcs = ["ip_address.cc"],
     hdrs = ["ip_address.h"],
@@ -2412,6 +2355,9 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = platform_select(
         _all = [
+            "@abseil-cpp//absl/base:core_headers",
+            "@abseil-cpp//absl/strings",
+            "@abseil-cpp//absl/strings:str_format",
             "@abseil-cpp//absl/strings:string_view",
             "//rtc_base:byte_order",
             "//rtc_base:ip_address",
@@ -2537,7 +2483,6 @@ cc_library(
     deps = platform_select(
         _all = [
             "@abseil-cpp//absl/algorithm:container",
-            "@abseil-cpp//absl/base:core_headers",
             "@abseil-cpp//absl/cleanup",
             "@abseil-cpp//absl/functional:any_invocable",
             "@abseil-cpp//absl/strings:string_view",
@@ -2939,11 +2884,11 @@ cc_library(
     deps = platform_select(
         _all = [
             "@abseil-cpp//absl/algorithm:container",
-            "@abseil-cpp//absl/base:core_headers",
             "@abseil-cpp//absl/base:nullability",
             "@abseil-cpp//absl/functional:any_invocable",
             "@abseil-cpp//absl/memory",
             "@abseil-cpp//absl/strings",
+            "@abseil-cpp//absl/strings:str_format",
             "@abseil-cpp//absl/strings:string_view",
             "//api:field_trials_view",
             "//api:scoped_refptr",
@@ -3207,6 +3152,55 @@ cc_library(
 )
 
 cc_library(
+    name = "clock_aligner",
+    srcs = ["clock_aligner.cc"],
+    hdrs = ["clock_aligner.h"],
+    compatible_with = ["//buildenv/target:non_prod"],
+    copts = platform_select(
+        _all = [
+            "-Wctad-maybe-unsupported",
+            "-Wshadow",
+        ],
+        apple = ["-fno-rtti"],
+        posix = ["-fno-exceptions"],
+        windows = ["-fno-rtti"],
+    ),
+    defines = platform_select(
+        _all = [
+            "PROTOBUF_ENABLE_DEBUG_LOGGING_MAY_LEAK_PII=0",
+            "RTC_ENABLE_H265",
+            "RTC_ENABLE_VP9",
+            "WEBRTC_ABSL_MUTEX",
+            "WEBRTC_DEPRECATE_PLAN_B",
+            "WEBRTC_ENABLE_AVX2",
+            "WEBRTC_ENABLE_PROTOBUF=1",
+            "WEBRTC_ENCODER_PSNR_STATS",
+            "WEBRTC_HAVE_SCTP",
+            "WEBRTC_NON_STATIC_TRACE_EVENT_HANDLERS=0",
+            "WEBRTC_STRICT_FIELD_TRIALS=0",
+        ],
+        apple = ["WEBRTC_MAC"],
+        arm64 = [
+            "WEBRTC_ARCH_ARM64",
+            "WEBRTC_HAS_NEON",
+        ],
+        linux = ["WEBRTC_LINUX"],
+        posix = ["WEBRTC_POSIX"],
+        windows = ["WEBRTC_WIN"],
+    ),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api:sequence_checker",
+        "//api/environment",
+        "//api/units:time_delta",
+        "//api/units:timestamp",
+        "//rtc_base:checks",
+        "//rtc_base:macromagic",
+        "//rtc_base/system:no_unique_address",
+    ],
+)
+
+cc_library(
     name = "async_udp_socket",
     srcs = ["async_udp_socket.cc"],
     hdrs = ["async_udp_socket.h"],
@@ -3247,11 +3241,11 @@ cc_library(
     deps = [
         "//api:sequence_checker",
         "//api/environment",
-        "//api/units:time_delta",
         "//api/units:timestamp",
         "//rtc_base:async_packet_socket",
         "//rtc_base:buffer",
         "//rtc_base:checks",
+        "//rtc_base:clock_aligner",
         "//rtc_base:logging",
         "//rtc_base:macromagic",
         "//rtc_base:socket",
@@ -3957,51 +3951,6 @@ cc_library(
 )
 
 cc_library(
-    name = "callback_list_unittests",
-    testonly = 1,
-    srcs = ["callback_list_unittest.cc"],
-    copts = platform_select(
-        _all = [
-            "-Wctad-maybe-unsupported",
-            "-Wshadow",
-        ],
-        apple = ["-fno-rtti"],
-        posix = ["-fno-exceptions"],
-        windows = ["-fno-rtti"],
-    ),
-    defines = platform_select(
-        _all = [
-            "PROTOBUF_ENABLE_DEBUG_LOGGING_MAY_LEAK_PII=0",
-            "RTC_ENABLE_H265",
-            "RTC_ENABLE_VP9",
-            "WEBRTC_ABSL_MUTEX",
-            "WEBRTC_DEPRECATE_PLAN_B",
-            "WEBRTC_ENABLE_AVX2",
-            "WEBRTC_ENABLE_PROTOBUF=1",
-            "WEBRTC_ENCODER_PSNR_STATS",
-            "WEBRTC_HAVE_SCTP",
-            "WEBRTC_NON_STATIC_TRACE_EVENT_HANDLERS=0",
-            "WEBRTC_STRICT_FIELD_TRIALS=0",
-            "WEBRTC_UNIT_TEST",
-        ],
-        apple = ["WEBRTC_MAC"],
-        arm64 = [
-            "WEBRTC_ARCH_ARM64",
-            "WEBRTC_HAS_NEON",
-        ],
-        linux = ["WEBRTC_LINUX"],
-        posix = ["WEBRTC_POSIX"],
-        windows = ["WEBRTC_WIN"],
-    ),
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//rtc_base:callback_list",
-        "//rtc_base:untyped_function",
-        "//test:test_support",
-    ],
-)
-
-cc_library(
     name = "rtc_base_tests_utils",
     testonly = 1,
     srcs = [
@@ -4108,7 +4057,6 @@ cc_library(
         "//rtc_base/network:received_packet",
         "//rtc_base/synchronization:mutex",
         "@abseil-cpp//absl/algorithm:container",
-        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/functional:any_invocable",
         "@abseil-cpp//absl/memory",
         "@abseil-cpp//absl/strings",

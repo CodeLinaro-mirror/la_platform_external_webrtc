@@ -26,20 +26,6 @@ filegroup(
 )
 
 cc_library(
-    name = "stats",
-    compatible_with = ["//buildenv/target:non_prod"],
-    visibility = ["//:__subpackages__"],
-    deps = ["//stats:rtc_stats"],
-)
-
-cc_library(
-    name = "rtc_stats",
-    compatible_with = ["//buildenv/target:non_prod"],
-    visibility = ["//visibility:public"],
-    deps = ["//api:rtc_stats_api"],
-)
-
-cc_library(
     name = "rtc_stats_test_utils",
     srcs = ["test/rtc_test_stats.cc"],
     hdrs = ["test/rtc_test_stats.h"],
@@ -82,6 +68,5 @@ cc_library(
         "//api/units:timestamp",
         "//rtc_base:checks",
         "//rtc_base/system:rtc_export",
-        "//stats:rtc_stats",
     ],
 )

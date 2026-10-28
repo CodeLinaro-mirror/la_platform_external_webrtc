@@ -70,7 +70,7 @@ class PeerConnectionDataChannelOpenTest
   scoped_refptr<PeerConnectionTestWrapper> CreatePc(
       absl::string_view field_trials = "") {
     auto pc_wrapper = make_ref_counted<PeerConnectionTestWrapper>(
-        "pc", env_, &vss_, background_thread_.get(), background_thread_.get());
+        "pc", env_, &vss_, background_thread_.get());
     pc_wrapper->CreatePc({}, CreateBuiltinAudioEncoderFactory(),
                          CreateBuiltinAudioDecoderFactory(),
                          CreateTestFieldTrialsPtr(field_trials));
@@ -213,21 +213,12 @@ INSTANTIATE_TEST_SUITE_P(
     PeerConnectionDataChannelOpenTest,
     ::testing::Combine(
         testing::Values(  // Field trials to use.
-                          // WebRTC 1.0 + DTLS 1.2
-            "WebRTC-IceHandshakeDtls/Disabled/WebRTC-ForceDtls13/"
-            "Disabled/",
-            // SPED + DTLS 1.2
-            "WebRTC-IceHandshakeDtls/Enabled/WebRTC-ForceDtls13/"
-            "Disabled/",
-            // WebRTC 1.0 + DTLS 1.3
-            "WebRTC-IceHandshakeDtls/Disabled/WebRTC-ForceDtls13/"
-            "Enabled/",
+                          // WebRTC 1.0 + DTLS 1.3
+            "WebRTC-IceHandshakeDtls/Disabled/",
             // SPED + DTLS 1.3
-            "WebRTC-IceHandshakeDtls/Enabled/WebRTC-ForceDtls13/"
-            "Enabled/",
+            "WebRTC-IceHandshakeDtls/Enabled/",
             // SPED + DTLS 1.3 + SNAP
-            "WebRTC-IceHandshakeDtls/Enabled/WebRTC-ForceDtls13/"
-            "Enabled/WebRTC-Sctp-Snap/Enabled/"),
+            "WebRTC-IceHandshakeDtls/Enabled/WebRTC-Sctp-Snap/Enabled/"),
         testing::Bool(),  // Whether to skip signaling candidates from
                           // first connection.
         testing::Values(

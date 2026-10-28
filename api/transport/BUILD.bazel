@@ -152,7 +152,6 @@ cc_library(
         "//api/units:time_delta",
         "//api/units:timestamp",
         "//rtc_base/system:rtc_export",
-        "@abseil-cpp//absl/base:core_headers",
     ],
 )
 
@@ -213,7 +212,6 @@ cc_library(
         "//api/transport:network_control",
         "//api/units:time_delta",
         "//modules/congestion_controller/goog_cc",
-        "//modules/congestion_controller/goog_cc_scream_network_controller",
         "//modules/congestion_controller/scream:scream_network_controller",
         "//rtc_base:logging",
         "//rtc_base/experiments:field_trial_parser",
@@ -281,7 +279,6 @@ cc_library(
         "//rtc_base:span_helpers",
         "//rtc_base:stringutils",
         "//system_wrappers:metrics",
-        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/strings:string_view",
     ],
 )

@@ -120,6 +120,5 @@ cc_library(
         "//video:video_stream_encoder_interface",
         "//video/config:encoder_config",
         "@abseil-cpp//absl/algorithm:container",
-        "@abseil-cpp//absl/base:core_headers",
     ],
 )

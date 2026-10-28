@@ -71,8 +71,6 @@ cc_library(
         "//api/units:time_delta",
         "//rtc_base:macromagic",
         "//rtc_base/system:rtc_export",
-        "@abseil-cpp//absl/base:config",
-        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/functional:any_invocable",
         "@abseil-cpp//absl/strings:string_view",
     ],
