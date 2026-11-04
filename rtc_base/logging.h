@@ -50,6 +50,7 @@
 
 #include <errno.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -118,6 +119,8 @@ class LogMessage;
 // the most flexible way.
 class LogLineRef {
  public:
+  ~LogLineRef();
+
   absl::string_view message() const { return message_; }
   absl::string_view filename() const { return filename_; }
   int line() const { return line_; }
@@ -127,16 +130,20 @@ class LogLineRef {
   LoggingSeverity severity() const { return severity_; }
   absl::string_view queue_name() const { return queue_name_; }
 
-#if RTC_LOG_ENABLED()
-  std::string DefaultLogLine() const;
-#else
-  std::string DefaultLogLine() const { return ""; }
-#endif
+  // Returns the log line in the default format: the log prefix, timestamp,
+  // thread and file information, followed by the message. It is formatted on
+  // first use and then cached, so that all consumers of a log message share
+  // it. Since the cache isn't synchronized, a LogLineRef must not be used on
+  // several threads at the same time.
+  const std::string& DefaultLogLine() const;
 
  private:
   friend class LogMessage;
   LogLineRef();
-  void set_message(std::string message) { message_ = std::move(message); }
+  void set_message(std::string message) {
+    message_ = std::move(message);
+    default_log_line_.reset();
+  }
   void set_filename(absl::string_view filename) { filename_ = filename; }
   void set_line(int line) { line_ = line; }
   void set_thread_id(std::optional<PlatformThreadId> thread_id) {
@@ -164,6 +171,8 @@ class LogLineRef {
   absl::string_view tag_ = "libjingle";
   // The severity level of this message
   LoggingSeverity severity_;
+  // The result of DefaultLogLine(), formatted on first use.
+  mutable std::optional<std::string> default_log_line_;
 };
 
 // Virtual sink interface that can receive log messages.
@@ -171,19 +180,30 @@ class LogSink {
  public:
   LogSink() {}
   virtual ~LogSink() {}
+  [[deprecated("Override OnLogMessage(const LogLineRef&) instead.")]]
   virtual void OnLogMessage(const std::string& msg,
                             LoggingSeverity severity,
                             const char* tag);
+  [[deprecated("Override OnLogMessage(const LogLineRef&) instead.")]]
   virtual void OnLogMessage(const std::string& message,
                             LoggingSeverity severity);
-  virtual void OnLogMessage(const std::string& message) = 0;
+  [[deprecated("Override OnLogMessage(const LogLineRef&) instead.")]]
+  virtual void OnLogMessage(const std::string& message);
 
+  [[deprecated("Override OnLogMessage(const LogLineRef&) instead.")]]
   virtual void OnLogMessage(absl::string_view msg,
                             LoggingSeverity severity,
                             const char* tag);
+  [[deprecated("Override OnLogMessage(const LogLineRef&) instead.")]]
   virtual void OnLogMessage(absl::string_view message,
                             LoggingSeverity severity);
+  [[deprecated("Override OnLogMessage(const LogLineRef&) instead.")]]
   virtual void OnLogMessage(absl::string_view message);
+
+  // Called for each log message that is at least as severe as the minimum
+  // severity of the sink. The default implementation formats the message with
+  // LogLineRef::DefaultLogLine() and passes it on to the deprecated overloads
+  // above.
   virtual void OnLogMessage(const LogLineRef& line);
 
  private:
@@ -247,7 +267,6 @@ class LoggingConfig {
   std::vector<std::unique_ptr<LogSink>> sinks_;
 };
 
-#if RTC_LOG_ENABLED()
 // Initializes logging with the given configuration.
 // Can be called only once. Returns true if successful.
 // If not called explicitly, logging will be implicitly initialized
@@ -256,12 +275,16 @@ bool InitializeLogging(LoggingConfig config);
 
 // Returns the current logging configuration.
 const LoggingConfig& GetLoggingConfig();
-#else
-inline bool InitializeLogging(LoggingConfig config) {
-  return false;
-}
-const LoggingConfig& GetLoggingConfig();
-#endif
+
+// Resets logging state for testing and returns the previously active
+// LoggingConfig by move.
+// - When `restore_config` is std::nullopt (e.g. in SetUp), the active
+//   configuration is replaced with a default one and the next
+//   InitializeLogging() call will succeed.
+// - When `restore_config` is provided (e.g. in TearDown), moves it back in as
+//   the active initialized configuration.
+LoggingConfig ResetLoggingForTesting(
+    std::optional<LoggingConfig> restore_config = std::nullopt);
 
 namespace webrtc_logging_impl {
 
@@ -328,9 +351,14 @@ enum class LogArgType : int8_t {
 
 // Wrapper for log arguments. Only ever make values of this type with the
 // MakeVal() functions.
-template <LogArgType N, typename T>
+// `kSize` is a compile-time estimate of the number of characters that the
+// argument adds to the log message, used to pre-allocate the message buffer.
+// It is 0 for metadata, which isn't part of the message, and for std::string
+// and string views, whose exact size Log() reads at runtime.
+template <LogArgType N, typename T, size_t kSize = 0>
 struct Val {
   static constexpr LogArgType Type() { return N; }
+  static constexpr size_t SizeHint() { return kSize; }
   T GetVal() const { return val; }
   T val;
 };
@@ -340,41 +368,78 @@ struct Val {
 // because we need somewhere to store the temp string.)
 struct ToStringVal {
   static constexpr LogArgType Type() { return LogArgType::kStdString; }
+  // The exact size of the string is read at runtime.
+  static constexpr size_t SizeHint() { return 0; }
   const std::string* GetVal() const { return &val; }
   std::string val;
 };
 
-inline Val<LogArgType::kInt, int> MakeVal(int x) {
+inline Val<LogArgType::kInt, int, 6> MakeVal(int x) {
   return {x};
 }
-inline Val<LogArgType::kLong, long> MakeVal(long x) {
+inline Val<LogArgType::kLong, long, 8> MakeVal(long x) {
   return {x};
 }
-inline Val<LogArgType::kLongLong, long long> MakeVal(long long x) {
+inline Val<LogArgType::kLongLong, long long, 10> MakeVal(long long x) {
   return {x};
 }
-inline Val<LogArgType::kUInt, unsigned int> MakeVal(unsigned int x) {
+inline Val<LogArgType::kUInt, unsigned int, 6> MakeVal(unsigned int x) {
   return {x};
 }
-inline Val<LogArgType::kULong, unsigned long> MakeVal(unsigned long x) {
+inline Val<LogArgType::kULong, unsigned long, 8> MakeVal(unsigned long x) {
   return {x};
 }
-inline Val<LogArgType::kULongLong, unsigned long long> MakeVal(
+inline Val<LogArgType::kULongLong, unsigned long long, 10> MakeVal(
     unsigned long long x) {
   return {x};
 }
 
-inline Val<LogArgType::kDouble, double> MakeVal(double x) {
+inline Val<LogArgType::kDouble, double, 8> MakeVal(double x) {
   return {x};
 }
 
-inline Val<LogArgType::kLongDouble, long double> MakeVal(long double x) {
+inline Val<LogArgType::kLongDouble, long double, 10> MakeVal(long double x) {
   return {x};
 }
 
-inline Val<LogArgType::kCharP, const char*> MakeVal(const char* x) {
+// Overloads of MakeStringVal() that take a higher rank are preferred over those
+// that take a lower one, see https://abseil.io/tips/229. Callers pass RankMax.
+struct Rank0 {};
+struct Rank1 : Rank0 {};
+struct Rank2 : Rank1 {};
+using RankMax = Rank2;
+
+// String literals and other character arrays. The size of the array is used as
+// the size hint, which is exact for string literals.
+template <size_t N>
+inline Val<LogArgType::kCharP, const char*, N - 1> MakeStringVal(
+    const char (&x)[N],
+    Rank2) {
   return {x};
 }
+
+// Types that support AbslStringify, also if they convert to a character
+// pointer.
+template <typename T>
+  requires(absl::HasAbslStringify<T>::value)
+ToStringVal MakeStringVal(const T& x, Rank1) {
+  return {absl::StrCat(x)};
+}
+
+// Character pointers, and other types that implicitly convert to them, such as
+// arrays of unknown bound.
+inline Val<LogArgType::kCharP, const char*, 16> MakeStringVal(const char* x,
+                                                              Rank0) {
+  return {x};
+}
+
+// Arguments that one of the MakeStringVal() overloads above formats as a
+// string: the one with the highest rank that applies.
+template <typename T>
+inline auto MakeVal(const T& x) -> decltype(MakeStringVal(x, RankMax{})) {
+  return MakeStringVal(x, RankMax{});
+}
+
 inline Val<LogArgType::kStdString, const std::string*> MakeVal(
     const std::string& x) {
   return {&x};
@@ -396,7 +461,7 @@ inline Val<LogArgType::kStdStringView, const std::string_view*> MakeVal(
   return {&x};
 }
 
-inline Val<LogArgType::kVoidP, const void*> MakeVal(const void* x) {
+inline Val<LogArgType::kVoidP, const void*, 16> MakeVal(const void* x) {
   return {x};
 }
 
@@ -426,17 +491,13 @@ inline Val<LogArgType::kLogMetadataTag, LogMetadataTag> MakeVal(
 }
 #endif
 
-template <typename T>
-  requires(absl::HasAbslStringify<T>::value &&
-           !std::is_same_v<std::decay_t<T>, std::string_view>)
-ToStringVal MakeVal(const T& x) {
-  return {absl::StrCat(x)};
-}
-
 #if RTC_LOG_ENABLED()
-void Log(const LogArgType* fmt, ...);
+// `size_hint` is a compile-time estimate of the size of the log message, see
+// LogStreamer<>::Call(). `fmt` lists the types of the variadic arguments,
+// followed by LogArgType::kEnd.
+void Log(size_t size_hint, const LogArgType* fmt, ...);
 #else
-inline void Log(const LogArgType* fmt, ...) {
+inline void Log(size_t size_hint, const LogArgType* fmt, ...) {
   // Do nothing, shouldn't be invoked
 }
 #endif
@@ -456,8 +517,12 @@ class LogStreamer<> final {
 
   template <typename... Us>
   RTC_FORCE_INLINE static void Call(const Us&... args) {
+    // Compile-time estimate of the message size, which Log() complements with
+    // the sizes of string arguments to pre-allocate the message buffer.
+    // + 1 accounts for the trailing '\n' appended in FinishPrintStream().
+    static constexpr size_t kSizeHint = (Us::SizeHint() + ... + 1);
     static constexpr LogArgType t[] = {Us::Type()..., LogArgType::kEnd};
-    Log(t, args.GetVal()...);
+    Log(kSizeHint, t, args.GetVal()...);
   }
 };
 
@@ -545,6 +610,9 @@ class LogMessage {
 
   void AddTag(const char* tag);
   StringBuilder& stream();
+  // Reserves capacity in the stream for `size` more characters, in addition to
+  // the extra error information that is appended by FinishPrintStream().
+  void ReserveStream(size_t size);
   // Returns the time at which this function was called for the first time.
   // The time will be used as the logging start time.
   // If this is not called externally, the LogMessage ctor also calls it, in
@@ -624,6 +692,7 @@ class LogMessage {
 
   inline void AddTag(const char* tag) {}
   inline StringBuilder& stream() { return print_stream_; }
+  inline void ReserveStream(size_t size) {}
   inline static int64_t LogStartTime() { return 0; }
   inline static uint32_t WallClockStartTime() { return 0; }
   [[deprecated("Use InitializeLogging instead.")]]

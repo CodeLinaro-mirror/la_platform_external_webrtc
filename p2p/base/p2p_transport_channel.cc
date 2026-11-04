@@ -28,7 +28,6 @@
 #include "absl/algorithm/container.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/memory/memory.h"
-#include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
 #include "api/async_dns_resolver.h"
 #include "api/candidate.h"
@@ -62,6 +61,7 @@
 #include "rtc_base/async_packet_socket.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/dscp.h"
+#include "rtc_base/experiments/rfc8888_congestion_control_feedback_experiment.h"
 #include "rtc_base/experiments/struct_parameters_parser.h"
 #include "rtc_base/ip_address.h"
 #include "rtc_base/logging.h"
@@ -322,7 +322,7 @@ void P2PTransportChannel::AddConnection(Connection* connection) {
           return dtls_stun_piggyback_callbacks_.send_data(request);
         },
         [&](auto data, auto ack) {
-          dtls_stun_piggyback_callbacks_.recv_data(data, ack);
+          dtls_stun_piggyback_callbacks_.recv_data(data, std::move(ack));
         }));
   }
 
@@ -816,7 +816,7 @@ void P2PTransportChannel::ParseFieldTrials(
     stun_dict_writer_.Disable();
   }
 
-  if (field_trials.IsEnabled("WebRTC-RFC8888CongestionControlFeedback")) {
+  if (IsRfc8888CongestionControlFeedbackEnabled(field_trials)) {
     int desired_recv_esn = 1;
     RTC_LOG(LS_INFO) << "Set WebRTC-RFC8888CongestionControlFeedback: Enable "
                         "and set ECN recving mode";
@@ -1474,12 +1474,16 @@ bool P2PTransportChannel::CreateConnection(PortInterface* port,
     }
   }
 
-  // Look for an existing connection with this remote address.  If one is not
-  // found or it is found but the existing remote candidate has an older
-  // generation, then we can create a new connection for this address.
+  // Look for an existing connection with this remote address. If one is not
+  // found or a connection exists with an older generation remote candidate and
+  // is not selected, then we can create a new connection for this address.
+  // Any selected connection is kept so that it can be used to send data during
+  // ICE restart per RFC 8445. The skipped connection would be pruned later when
+  // a new generation connection is selected at the end of ICE restart.
   Connection* connection = port->GetConnection(remote_candidate.address());
-  if (connection == nullptr || connection->remote_candidate().generation() <
-                                   remote_candidate.generation()) {
+  if (connection == nullptr ||
+      (!connection->selected() && connection->remote_candidate().generation() <
+                                      remote_candidate.generation())) {
     // Don't create a connection if this is a candidate we received in a
     // message and we are not allowed to make outgoing connections.
     PortInterface::CandidateOrigin origin = GetOrigin(port, origin_port);
@@ -1498,7 +1502,15 @@ bool P2PTransportChannel::CreateConnection(PortInterface* port,
     return true;
   }
 
-  // No new connection was created.
+  // No new connection was created. Log the cases.
+  if (connection->selected()) {
+    RTC_LOG(LS_INFO) << port->ToString()
+                     << ": A selected connection exists. Skip creating "
+                     << "connection for remote candidate: "
+                     << remote_candidate.ToSensitiveString();
+    return false;
+  }
+
   // It is not legal to try to change any of the parameters of an existing
   // connection; however, the other side can send a duplicate candidate.
   if (!remote_candidate.IsEquivalent(connection->remote_candidate())) {
@@ -2325,7 +2337,7 @@ Candidate P2PTransportChannel::SanitizeRemoteCandidate(
   RTC_DCHECK_RUN_ON(&network_thread_);
   // If the remote endpoint signaled us an mDNS candidate, we assume it
   // is supposed to be sanitized.
-  bool use_hostname_address = absl::EndsWith(c.address().hostname(), LOCAL_TLD);
+  bool use_hostname_address = IsMdnsHostname(c.address().hostname());
   // Remove the address for prflx remote candidates. See
   // https://w3c.github.io/webrtc-stats/#dom-rtcicecandidatestats.
   use_hostname_address |= c.is_prflx();

@@ -69,6 +69,8 @@ cc_library(
         "//api/units:data_size",
         "//api/units:time_delta",
         "//api/units:timestamp",
+        "//modules/congestion_controller/scream:scream_v2_parameters",
+        "//rtc_base:checks",
     ],
 )
 

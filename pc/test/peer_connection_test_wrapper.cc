@@ -149,13 +149,11 @@ PeerConnectionTestWrapper::PeerConnectionTestWrapper(
     const std::string& name,
     const Environment& env,
     SocketServer* socket_server,
-    Thread* network_thread,
-    Thread* worker_thread)
+    Thread* network_thread)
     : name_(name),
       env_(env),
       socket_server_(socket_server),
       network_thread_(network_thread),
-      worker_thread_(worker_thread),
       pending_negotiation_(false) {
   pc_thread_checker_.Detach();
 }
@@ -165,7 +163,7 @@ PeerConnectionTestWrapper::~PeerConnectionTestWrapper() {
   // To avoid flaky bot failures, make sure fake sources are stopped prior to
   // closing the peer connections. See https://crbug.com/webrtc/15018.
   StopFakeVideoSources();
-  // Either network_thread or worker_thread might be active at this point.
+  // The network thread might be active at this point.
   // Relying on ~PeerConnection to properly wait for them doesn't work,
   // as a vptr race might occur (before we enter the destruction body).
   // See: bugs.webrtc.org/9847
@@ -196,7 +194,6 @@ bool PeerConnectionTestWrapper::CreatePc(
 
   PeerConnectionFactoryDependencies dependencies;
   dependencies.network_thread = network_thread_;
-  dependencies.worker_thread = worker_thread_;
   dependencies.signaling_thread = Thread::Current();
   dependencies.socket_factory = socket_server_;
   dependencies.adm =
@@ -514,7 +511,8 @@ scoped_refptr<MediaStreamInterface> PeerConnectionTestWrapper::GetUserMedia(
     bool audio,
     const AudioOptions& audio_options,
     bool video,
-    Resolution resolution) {
+    Resolution resolution,
+    int fps) {
   std::string stream_id =
       kStreamIdBase + absl::StrCat(num_get_user_media_calls_++);
   scoped_refptr<MediaStreamInterface> stream =
@@ -533,9 +531,8 @@ scoped_refptr<MediaStreamInterface> PeerConnectionTestWrapper::GetUserMedia(
   }
 
   if (video) {
-    // Set max frame rate to 10fps to reduce the risk of the tests to be flaky.
     FakePeriodicVideoSource::Config config;
-    config.frame_interval = TimeDelta::Millis(100);
+    config.frame_interval = TimeDelta::Seconds(1) / fps;
     config.timestamp_offset = env_.clock().CurrentTime();
     config.width = resolution.width;
     config.height = resolution.height;

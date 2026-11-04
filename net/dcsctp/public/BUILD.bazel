@@ -94,7 +94,6 @@ cc_library(
         "//api/units:timestamp",
         "//net/dcsctp/public:types",
         "//rtc_base:strong_alias",
-        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/strings:string_view",
     ],
 )

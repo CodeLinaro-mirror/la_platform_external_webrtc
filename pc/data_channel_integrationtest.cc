@@ -1815,11 +1815,9 @@ class DataChannelIntegrationTestUnifiedPlanFieldTrials
 
 const char* kTrialsVariants[] = {
     "",
-    "WebRTC-ForceDtls13/Enabled/",
     "WebRTC-IceHandshakeDtls/Enabled/",
-    "WebRTC-ForceDtls13/Enabled/WebRTC-EnableDtlsPqc/Enabled/",
-    "WebRTC-ForceDtls13/Enabled/WebRTC-IceHandshakeDtls/Enabled/",
-    ("WebRTC-ForceDtls13/Enabled/WebRTC-IceHandshakeDtls/Enabled/"
+    "WebRTC-EnableDtlsPqc/Enabled/",
+    ("WebRTC-IceHandshakeDtls/Enabled/"
      "WebRTC-EnableDtlsPqc/Enabled/"),
 };
 
@@ -1840,6 +1838,9 @@ class SdpNegotiationGoogSpedV1Test
       public ::testing::WithParamInterface<SpedV1TestConfig> {};
 
 TEST_P(SdpNegotiationGoogSpedV1Test, VerifySdp) {
+  if (!SSLStreamAdapter::IsBoringSsl()) {
+    GTEST_SKIP() << "DTLS-in-STUN needs boringssl.";
+  }
   const auto& param = GetParam();
   SetFieldTrials(
       "Caller", param.caller_enabled ? "WebRTC-IceHandshakeDtls/Enabled/" : "");

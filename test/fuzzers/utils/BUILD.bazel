@@ -66,11 +66,11 @@ cc_library(
     deps = platform_select(
         _all = [
             "@abseil-cpp//absl/memory",
+            "//api:rtp_header_extension_id",
             "//api:rtp_parameters",
             "//api:time_controller",
             "//api:transport_api",
             "//api/environment",
-            "//api/task_queue",
             "//api/units:time_delta",
             "//api/units:timestamp",
             "//api/video:video_frame",
@@ -78,6 +78,7 @@ cc_library(
             "//call",
             "//call:call_interfaces",
             "//call:video_receive_stream_api",
+            "//media:fake_video_renderer",
             "//media:rtc_internal_video_codecs",
             "//modules/rtp_rtcp:rtp_rtcp_format",
             "//rtc_base:logging",

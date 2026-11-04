@@ -83,6 +83,5 @@ cc_library(
         "//common_audio",
         "//rtc_base:checks",
         "//rtc_base:safe_conversions",
-        "@abseil-cpp//absl/base:core_headers",
     ],
 )

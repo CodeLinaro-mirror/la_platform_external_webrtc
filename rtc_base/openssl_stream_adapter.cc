@@ -41,7 +41,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
-#include "rtc_base/openssl_adapter.h"
 #include "rtc_base/openssl_digest.h"
 #include "rtc_base/openssl_utility.h"
 #include "rtc_base/span_helpers.h"
@@ -903,8 +902,7 @@ void OpenSSLStreamAdapter::SetTimeout(int delay_ms) {
             retransmission_count_++;
             RTC_LOG(LS_INFO) << "DTLS retransmission";
           } else if (res < 0) {
-            RTC_LOG(LS_INFO) << "DTLSv1_handle_timeout() return -1";
-            Error("DTLSv1_handle_timeout", res, -1, true);
+            Error("DTLSv1_handle_timeout", res, SSL_AD_INTERNAL_ERROR, true);
             return TimeDelta::PlusInfinity();
           }
           // We check the timer even after SSL_CONNECTED,
@@ -1180,8 +1178,7 @@ SSL_CTX* OpenSSLStreamAdapter::SetupSSLContext() {
     return nullptr;
   }
 
-  // TODO(bugs.webrtc.org/339300437): Remove dependency.
-  SSL_CTX_set_info_callback(ctx, OpenSSLAdapter::SSLInfoCallback);
+  SSL_CTX_set_info_callback(ctx, openssl::SSLInfoCallback);
 
   int mode = SSL_VERIFY_PEER;
   if (GetClientAuthEnabled()) {
@@ -1247,8 +1244,8 @@ bool OpenSSLStreamAdapter::VerifyPeerCertificate() {
     RTC_LOG(LS_WARNING)
         << "Rejected peer certificate due to mismatched digest using "
         << peer_certificate_digest_algorithm_ << ". Expected "
-        << hex_encode_with_delimiter(peer_certificate_digest_value_, ':')
-        << " got " << hex_encode_with_delimiter(computed_digest, ':');
+        << HexEncodeWithDelimiter(peer_certificate_digest_value_, ':')
+        << " got " << HexEncodeWithDelimiter(computed_digest, ':');
     return false;
   }
   // Ignore any verification error if the digest matches, since there is no
