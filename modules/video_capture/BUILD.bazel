@@ -183,9 +183,9 @@ cc_library(
             "//api:make_ref_counted",
             "//api:scoped_refptr",
             "//api:sequence_checker",
+            "//api/video:video_common",
             "//api/video:video_rtp_headers",
             "//common_video",
-            "//media:video_common",
             "//modules/video_capture:video_capture_module",
             "//rtc_base:checks",
             "//rtc_base:logging",
@@ -199,10 +199,7 @@ cc_library(
             "//rtc_base/system:rtc_export",
             "//system_wrappers",
         ],
-        linux = [
-            "//media:rtc_media_base",
-            "//rtc_base:sanitizer",
-        ],
+        linux = ["//rtc_base:sanitizer"],
     ),
     alwayslink = 1,
 )

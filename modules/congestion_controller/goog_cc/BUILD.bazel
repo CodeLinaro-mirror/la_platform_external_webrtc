@@ -530,7 +530,6 @@ cc_library(
         "//rtc_base:logging",
         "//rtc_base/experiments:field_trial_parser",
         "//system_wrappers:metrics",
-        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/strings",
     ],
 )

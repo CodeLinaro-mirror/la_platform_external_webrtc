@@ -201,6 +201,7 @@ cc_library(
     ],
     deps = [
         "//common_audio:common_audio_c",
+        "//common_audio:common_audio_cc",
         "//rtc_base:buffer",
         "//rtc_base:checks",
         "//rtc_base:safe_conversions",
@@ -246,6 +247,7 @@ cc_library(
     ),
     visibility = ["//visibility:public"],
     deps = [
+        "//api:bitrate_allocation",
         "//api/audio_codecs:audio_codecs_api",
         "//api/units:time_delta",
         "//common_audio",

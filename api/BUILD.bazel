@@ -480,16 +480,19 @@ cc_library(
     deps = [
         "//api:rtc_error",
         "//p2p:p2p_constants",
+        "//rtc_base:byte_order",
         "//rtc_base:checks",
         "//rtc_base:crc32",
         "//rtc_base:crypto_random",
+        "//rtc_base:digest",
         "//rtc_base:ip_address",
         "//rtc_base:net_helper",
         "//rtc_base:network_constants",
         "//rtc_base:socket_address",
+        "//rtc_base:ssl",
         "//rtc_base:stringutils",
         "//rtc_base/system:rtc_export",
-        "@abseil-cpp//absl/base:core_headers",
+        "@abseil-cpp//absl/base:no_destructor",
         "@abseil-cpp//absl/strings",
         "@abseil-cpp//absl/strings:string_view",
     ],
@@ -574,7 +577,6 @@ cc_library(
         "//api:scoped_refptr",
         "//rtc_base:ssl",
         "//rtc_base/system:rtc_export",
-        "@abseil-cpp//absl/base:core_headers",
     ],
 )
 
@@ -611,16 +613,22 @@ cc_library(
     compatible_with = ["//buildenv/target:non_prod"],
     visibility = ["//visibility:public"],
     deps = [
+        "//api:frame_transformer_interface",
         "//api:ref_count",
         "//api:rtc_error",
         "//api:sframe_types",
+        "@abseil-cpp//absl/functional:any_invocable",
     ],
 )
 
 cc_library(
     name = "rtp_sender_interface",
     srcs = ["rtp_sender_interface.cc"],
-    hdrs = ["rtp_sender_interface.h"],
+    hdrs = [
+        "encoded_audio_frame_injector_interface.h",
+        "encoded_video_frame_injector_interface.h",
+        "rtp_sender_interface.h",
+    ],
     compatible_with = ["//buildenv/target:non_prod"],
     copts = platform_select(
         _all = [
@@ -808,6 +816,7 @@ cc_library(
         "//system_wrappers:metrics",
         "@abseil-cpp//absl/algorithm:container",
         "@abseil-cpp//absl/base:nullability",
+        "@abseil-cpp//absl/functional:any_invocable",
         "@abseil-cpp//absl/memory",
         "@abseil-cpp//absl/strings",
         "@abseil-cpp//absl/strings:str_format",
@@ -861,6 +870,7 @@ cc_library(
         "//rtc_base:copy_on_write_buffer",
         "//rtc_base/system:rtc_export",
         "@abseil-cpp//absl/functional:any_invocable",
+        "@abseil-cpp//absl/strings:string_view",
     ],
 )
 
@@ -918,7 +928,10 @@ cc_library(
 cc_library(
     name = "peer_connection_interface",
     srcs = ["peer_connection_interface.cc"],
-    hdrs = ["peer_connection_interface.h"],
+    hdrs = [
+        "peer_connection_interface.h",
+        "peer_connection_tracer_interface.h",
+    ],
     compatible_with = ["//buildenv/target:non_prod"],
     copts = platform_select(
         _all = [
@@ -1001,6 +1014,7 @@ cc_library(
         "//api/transport:sctp_transport_factory_interface",
         "//api/units:time_delta",
         "//api/video:video_bitrate_allocator_factory",
+        "//api/video/timing:video_jitter_timing_factory",
         "//api/video_codecs:video_codecs_api",
         "//media:rtc_media_config",
         "//p2p:dtls_transport_factory",
@@ -1017,7 +1031,7 @@ cc_library(
         "//rtc_base:threading",
         "//rtc_base/system:plan_b_only",
         "//rtc_base/system:rtc_export",
-        "@abseil-cpp//absl/base:core_headers",
+        "@abseil-cpp//absl/functional:any_invocable",
         "@abseil-cpp//absl/strings:string_view",
     ],
 )
@@ -1125,7 +1139,6 @@ cc_library(
         "//api:scoped_refptr",
         "//rtc_base:checks",
         "//rtc_base/system:rtc_export",
-        "@abseil-cpp//absl/base:core_headers",
     ],
 )
 
@@ -1137,6 +1150,7 @@ cc_library(
     deps = [
         "//api:ref_count",
         "//api:rtc_error",
+        "@abseil-cpp//absl/functional:any_invocable",
     ],
 )
 
@@ -1444,8 +1458,6 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//rtc_base:checks",
-        "//rtc_base:strong_alias",
-        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/strings:str_format",
     ],
 )
@@ -1507,7 +1519,6 @@ cc_library(
         "//rtc_base:stringutils",
         "//rtc_base:strong_alias",
         "//rtc_base/system:rtc_export",
-        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/container:inlined_vector",
         "@abseil-cpp//absl/strings",
         "@abseil-cpp//absl/strings:str_format",
@@ -1569,7 +1580,6 @@ cc_library(
         "//api/test/pclf:media_quality_test_params",
         "//api/test/pclf:peer_configurer",
         "//api/units:time_delta",
-        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/memory",
         "@abseil-cpp//absl/strings:string_view",
     ],
@@ -1933,6 +1943,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//api/units:data_rate",
+        "//api/units:data_size",
         "//api/units:time_delta",
     ],
 )
@@ -2219,6 +2230,7 @@ cc_library(
     deps = [
         "//api:candidate",
         "//api:ref_count",
+        "//api/transport:ecn_marking",
         "//api/units:timestamp",
         "//p2p:transport_description",
         "//rtc_base/system:rtc_export",
@@ -2431,8 +2443,18 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//api:frame_transformer_interface",
+        "//api:payload_type",
+        "//api/units:time_delta",
+        "//api/units:timestamp",
+        "//api/video:encoded_image",
+        "//api/video:video_frame",
+        "//api/video:video_frame_metadata",
+        "//api/video:video_frame_type",
+        "//api/video_codecs:video_codecs_api",
         "//audio",
         "//modules/rtp_rtcp",
+        "//modules/rtp_rtcp:rtp_video_header",
+        "//modules/video_coding:codec_globals_headers",
         "//rtc_base:checks",
         "//rtc_base/system:rtc_export",
     ],

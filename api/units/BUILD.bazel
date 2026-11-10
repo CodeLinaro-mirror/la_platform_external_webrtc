@@ -258,24 +258,12 @@ cc_library(
     ],
 )
 
-rust_library(
-    name = "time_delta_ffi_rust",
-    srcs = ["time_delta_ffi.rs"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//api/units:time_delta",
-        "//api/units:time_delta_rs",
-        "@rules_rust//:cxx_rustdeps",
-    ],
-)
-
 rtc_rust_cxx_bridge(
     name = "time_delta_ffi",
     src = "time_delta_ffi.rs",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/units:time_delta",
-        "//api/units:time_delta_ffi_rust",
         "//api/units:time_delta_rs",
         "@rules_rust//:cxx_rustdeps",
     ],
@@ -287,17 +275,7 @@ rust_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/units:time_delta",
-        "@rules_rust//:cxx_rustdeps",
-    ],
-)
-
-rust_library(
-    name = "timestamp_ffi_rust",
-    srcs = ["timestamp_ffi.rs"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//api/units:timestamp",
-        "//api/units:timestamp_rs",
+        "@rules_rust//:cxx_cppdeps",
         "@rules_rust//:cxx_rustdeps",
     ],
 )
@@ -308,7 +286,6 @@ rtc_rust_cxx_bridge(
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/units:timestamp",
-        "//api/units:timestamp_ffi_rust",
         "//api/units:timestamp_rs",
         "@rules_rust//:cxx_rustdeps",
     ],
@@ -321,6 +298,7 @@ rust_library(
     deps = [
         "//api/units:time_delta_rs",
         "//api/units:timestamp",
+        "@rules_rust//:cxx_cppdeps",
         "@rules_rust//:cxx_rustdeps",
     ],
 )

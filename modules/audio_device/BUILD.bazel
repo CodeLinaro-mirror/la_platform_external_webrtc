@@ -586,7 +586,6 @@ cc_library(
         "//rtc_base/system:file_wrapper",
         "//rtc_base/task_utils:repeating_task",
         "//system_wrappers:metrics",
-        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/base:nullability",
         "@abseil-cpp//absl/strings:string_view",
     ],

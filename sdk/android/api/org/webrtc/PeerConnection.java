@@ -844,10 +844,18 @@ public class PeerConnection {
   };
 
   private final List<MediaStream> localStreams = new ArrayList<>();
-  private final long nativePeerConnection;
+  private final NativeLifecycleLock lifecycleLock;
   private List<RtpSender> senders = new ArrayList<>();
   private List<RtpReceiver> receivers = new ArrayList<>();
   private List<RtpTransceiver> transceivers = new ArrayList<>();
+
+  private <T> T callWithNative(NativeLifecycleLock.NativeCallable<T> callable, T defaultValue) {
+    return lifecycleLock.callOrDefault(callable, defaultValue);
+  }
+
+  private void runWithNative(NativeLifecycleLock.NativeRunnable runnable) {
+    lifecycleLock.runIfAlive(runnable);
+  }
 
   /**
    * Wraps a PeerConnection created by the factory. Can be used by clients that want to implement
@@ -858,51 +866,51 @@ public class PeerConnection {
   }
 
   PeerConnection(long nativePeerConnection) {
-    this.nativePeerConnection = nativePeerConnection;
+    this.lifecycleLock = new NativeLifecycleLock("PeerConnection", nativePeerConnection);
   }
 
   // JsepInterface.
   public SessionDescription getLocalDescription() {
-    return PeerConnectionJni.get().getLocalDescription(this);
+    return callWithNative(() -> PeerConnectionJni.get().getLocalDescription(this), null);
   }
 
   public SessionDescription getRemoteDescription() {
-    return PeerConnectionJni.get().getRemoteDescription(this);
+    return callWithNative(() -> PeerConnectionJni.get().getRemoteDescription(this), null);
   }
 
   public RtcCertificatePem getCertificate() {
-    return PeerConnectionJni.get().getCertificate(this);
+    return callWithNative(() -> PeerConnectionJni.get().getCertificate(this), null);
   }
 
   public DataChannel createDataChannel(String label, DataChannel.Init init) {
-    return PeerConnectionJni.get().createDataChannel(this, label, init);
+    return callWithNative(() -> PeerConnectionJni.get().createDataChannel(this, label, init), null);
   }
 
   public void createOffer(SdpObserver observer, MediaConstraints constraints) {
-    PeerConnectionJni.get().createOffer(this, observer, constraints);
+    runWithNative(() -> PeerConnectionJni.get().createOffer(this, observer, constraints));
   }
 
   public void createAnswer(SdpObserver observer, MediaConstraints constraints) {
-    PeerConnectionJni.get().createAnswer(this, observer, constraints);
+    runWithNative(() -> PeerConnectionJni.get().createAnswer(this, observer, constraints));
   }
 
   public void setLocalDescription(SdpObserver observer) {
-    PeerConnectionJni.get().setLocalDescriptionAutomatically(this, observer);
+    runWithNative(() -> PeerConnectionJni.get().setLocalDescriptionAutomatically(this, observer));
   }
 
   public void setLocalDescription(SdpObserver observer, SessionDescription sdp) {
-    PeerConnectionJni.get().setLocalDescription(this, observer, sdp);
+    runWithNative(() -> PeerConnectionJni.get().setLocalDescription(this, observer, sdp));
   }
 
   public void setRemoteDescription(SdpObserver observer, SessionDescription sdp) {
-    PeerConnectionJni.get().setRemoteDescription(this, observer, sdp);
+    runWithNative(() -> PeerConnectionJni.get().setRemoteDescription(this, observer, sdp));
   }
 
   /**
    * Tells the PeerConnection that ICE should be restarted.
    */
   public void restartIce() {
-    PeerConnectionJni.get().restartIce(this);
+    runWithNative(() -> PeerConnectionJni.get().restartIce(this));
   }
 
   /**
@@ -913,7 +921,7 @@ public class PeerConnection {
    * be able to control the exact time when audio playout starts.
    */
   public void setAudioPlayout(boolean playout) {
-    PeerConnectionJni.get().setAudioPlayout(this, playout);
+    runWithNative(() -> PeerConnectionJni.get().setAudioPlayout(this, playout));
   }
 
   /**
@@ -924,65 +932,76 @@ public class PeerConnection {
    * be able to control the exact time when audio recording starts.
    */
   public void setAudioRecording(boolean recording) {
-    PeerConnectionJni.get().setAudioRecording(this, recording);
+    runWithNative(() -> PeerConnectionJni.get().setAudioRecording(this, recording));
   }
 
   public boolean setConfiguration(RTCConfiguration config) {
-    return PeerConnectionJni.get().setConfiguration(this, config);
+    return callWithNative(() -> PeerConnectionJni.get().setConfiguration(this, config), false);
   }
 
   public boolean addIceCandidate(IceCandidate candidate) {
-    return PeerConnectionJni.get()
-        .addIceCandidate(this, candidate.sdpMid, candidate.sdpMLineIndex, candidate.sdp);
+    return callWithNative(
+        () ->
+            PeerConnectionJni.get()
+                .addIceCandidate(this, candidate.sdpMid, candidate.sdpMLineIndex, candidate.sdp),
+        false);
   }
 
   public void addIceCandidate(IceCandidate candidate, AddIceObserver observer) {
-    PeerConnectionJni.get()
+    runWithNative(() -> PeerConnectionJni.get()
         .addIceCandidateWithObserver(
-            this, candidate.sdpMid, candidate.sdpMLineIndex, candidate.sdp, observer);
+            this, candidate.sdpMid, candidate.sdpMLineIndex, candidate.sdp, observer));
   }
 
   public boolean removeIceCandidates(final IceCandidate[] candidates) {
-    return PeerConnectionJni.get().removeIceCandidates(this, candidates);
+    return callWithNative(
+        () -> PeerConnectionJni.get().removeIceCandidates(this, candidates), false);
   }
 
   /**
-   * Adds a new MediaStream to be sent on this peer connection.
-   * Note: This method is not supported with SdpSemantics.UNIFIED_PLAN. Please
-   * use addTrack instead.
+   * Adds a new MediaStream to be sent on this peer connection. Note: This method is not supported
+   * with SdpSemantics.UNIFIED_PLAN. Please use addTrack instead.
    */
   public boolean addStream(MediaStream stream) {
-    boolean ret = PeerConnectionJni.get().addLocalStream(this, stream.getNativeMediaStream());
-    if (!ret) {
-      return false;
-    }
-    localStreams.add(stream);
-    return true;
+    return callWithNative(
+        () ->
+            stream.lifecycleLock.callOrDefault(
+                nativeStream -> {
+                  if (!PeerConnectionJni.get().addLocalStream(this, nativeStream)) {
+                    return false;
+                  }
+                  localStreams.add(stream);
+                  return true;
+                },
+                false),
+        false);
   }
 
   /**
-   * Removes the given media stream from this peer connection.
-   * This method is not supported with SdpSemantics.UNIFIED_PLAN. Please use
-   * removeTrack instead.
+   * Removes the given media stream from this peer connection. This method is not supported with
+   * SdpSemantics.UNIFIED_PLAN. Please use removeTrack instead.
    */
   public void removeStream(MediaStream stream) {
-    PeerConnectionJni.get().removeLocalStream(this, stream.getNativeMediaStream());
-    localStreams.remove(stream);
+    runWithNative(
+        () -> {
+          stream.lifecycleLock.runIfAlive(
+              nativeStream -> PeerConnectionJni.get().removeLocalStream(this, nativeStream));
+          localStreams.remove(stream);
+        });
   }
 
   /**
    * Creates an RtpSender without a track.
    *
-   * <p>This method allows an application to cause the PeerConnection to negotiate
-   * sending/receiving a specific media type, but without having a track to
-   * send yet.
+   * <p>This method allows an application to cause the PeerConnection to negotiate sending/receiving
+   * a specific media type, but without having a track to send yet.
    *
-   * <p>When the application does want to begin sending a track, it can call
-   * RtpSender.setTrack, which doesn't require any additional SDP negotiation.
+   * <p>When the application does want to begin sending a track, it can call RtpSender.setTrack,
+   * which doesn't require any additional SDP negotiation.
    *
    * <p>Example use:
-   * <pre>
-   * {@code
+   *
+   * <pre>{@code
    * audioSender = pc.createSender("audio", "stream1");
    * videoSender = pc.createSender("video", "stream1");
    * // Do normal SDP offer/answer, which will kick off ICE/DTLS and negotiate
@@ -990,72 +1009,81 @@ public class PeerConnection {
    * // Later, when the endpoint is ready to actually begin sending:
    * audioSender.setTrack(audioTrack, false);
    * videoSender.setTrack(videoTrack, false);
-   * }
-   * </pre>
-   * <p>Note: This corresponds most closely to "addTransceiver" in the official
-   * WebRTC API, in that it creates a sender without a track. It was
-   * implemented before addTransceiver because it provides useful
-   * functionality, and properly implementing transceivers would have required
-   * a great deal more work.
+   * }</pre>
    *
-   * <p>Note: This is only available with SdpSemantics.PLAN_B specified. Please use
-   * addTransceiver instead.
+   * <p>Note: This corresponds most closely to "addTransceiver" in the official WebRTC API, in that
+   * it creates a sender without a track. It was implemented before addTransceiver because it
+   * provides useful functionality, and properly implementing transceivers would have required a
+   * great deal more work.
    *
-   * @param kind      Corresponds to MediaStreamTrack kinds (must be "audio" or
-   *                  "video").
-   * @param stream_id The ID of the MediaStream that this sender's track will
-   *                  be associated with when SDP is applied to the remote
-   *                  PeerConnection. If createSender is used to create an
-   *                  audio and video sender that should be synchronized, they
-   *                  should use the same stream ID.
-   * @return          A new RtpSender object if successful, or null otherwise.
+   * <p>Note: This is only available with SdpSemantics.PLAN_B specified. Please use addTransceiver
+   * instead.
+   *
+   * @param kind Corresponds to MediaStreamTrack kinds (must be "audio" or "video").
+   * @param stream_id The ID of the MediaStream that this sender's track will be associated with
+   *     when SDP is applied to the remote PeerConnection. If createSender is used to create an
+   *     audio and video sender that should be synchronized, they should use the same stream ID.
+   * @return A new RtpSender object if successful, or null otherwise.
    */
   public RtpSender createSender(String kind, String stream_id) {
-    RtpSender newSender = PeerConnectionJni.get().createSender(this, kind, stream_id);
-    if (newSender != null) {
-      senders.add(newSender);
-    }
-    return newSender;
+    return callWithNative(
+        () -> {
+          RtpSender newSender = PeerConnectionJni.get().createSender(this, kind, stream_id);
+          if (newSender != null) {
+            senders.add(newSender);
+          }
+          return newSender;
+        },
+        null);
   }
 
   /**
-   * Gets all RtpSenders associated with this peer connection.
-   * Note that calling getSenders will dispose of the senders previously
-   * returned.
+   * Gets all RtpSenders associated with this peer connection. Note that calling getSenders will
+   * dispose of the senders previously returned.
    */
   public List<RtpSender> getSenders() {
-    for (RtpSender sender : senders) {
-      sender.dispose();
-    }
-    senders = PeerConnectionJni.get().getSenders(this);
-    return Collections.unmodifiableList(senders);
+    return callWithNative(
+        () -> {
+          for (RtpSender sender : senders) {
+            sender.dispose();
+          }
+          senders = PeerConnectionJni.get().getSenders(this);
+          return Collections.unmodifiableList(senders);
+        },
+        Collections.emptyList());
   }
 
   /**
-   * Gets all RtpReceivers associated with this peer connection.
-   * Note that calling getReceivers will dispose of the receivers previously
-   * returned.
+   * Gets all RtpReceivers associated with this peer connection. Note that calling getReceivers will
+   * dispose of the receivers previously returned.
    */
   public List<RtpReceiver> getReceivers() {
-    for (RtpReceiver receiver : receivers) {
-      receiver.dispose();
-    }
-    receivers = PeerConnectionJni.get().getReceivers(this);
-    return Collections.unmodifiableList(receivers);
+    return callWithNative(
+        () -> {
+          for (RtpReceiver receiver : receivers) {
+            receiver.dispose();
+          }
+          receivers = PeerConnectionJni.get().getReceivers(this);
+          return Collections.unmodifiableList(receivers);
+        },
+        Collections.emptyList());
   }
 
   /**
-   * Gets all RtpTransceivers associated with this peer connection.
-   * Note that calling getTransceivers will dispose of the transceivers previously
-   * returned.
-   * Note: This is only available with SdpSemantics.UNIFIED_PLAN specified.
+   * Gets all RtpTransceivers associated with this peer connection. Note that calling
+   * getTransceivers will dispose of the transceivers previously returned. Note: This is only
+   * available with SdpSemantics.UNIFIED_PLAN specified.
    */
   public List<RtpTransceiver> getTransceivers() {
-    for (RtpTransceiver transceiver : transceivers) {
-      transceiver.dispose();
-    }
-    transceivers = PeerConnectionJni.get().getTransceivers(this);
-    return Collections.unmodifiableList(transceivers);
+    return callWithNative(
+        () -> {
+          for (RtpTransceiver transceiver : transceivers) {
+            transceiver.dispose();
+          }
+          transceivers = PeerConnectionJni.get().getTransceivers(this);
+          return Collections.unmodifiableList(transceivers);
+        },
+        Collections.emptyList());
   }
 
   /**
@@ -1076,13 +1104,18 @@ public class PeerConnection {
     if (track == null || streamIds == null) {
       throw new NullPointerException("No MediaStreamTrack specified in addTrack.");
     }
-    RtpSender newSender =
-        PeerConnectionJni.get().addTrack(this, track.getNativeMediaStreamTrack(), streamIds);
-    if (newSender == null) {
-      throw new IllegalStateException("C++ addTrack failed.");
-    }
-    senders.add(newSender);
-    return newSender;
+    return lifecycleLock.call(
+        () ->
+            track.lifecycleLock.call(
+                nativeTrack -> {
+                  RtpSender newSender =
+                      PeerConnectionJni.get().addTrack(this, nativeTrack, streamIds);
+                  if (newSender == null) {
+                    throw new IllegalStateException("C++ addTrack failed.");
+                  }
+                  senders.add(newSender);
+                  return newSender;
+                }));
   }
 
   /**
@@ -1094,7 +1127,11 @@ public class PeerConnection {
     if (sender == null) {
       throw new NullPointerException("No RtpSender specified for removeTrack.");
     }
-    return PeerConnectionJni.get().removeTrack(this, sender.getNativeRtpSender());
+    return callWithNative(
+        () ->
+            sender.lifecycleLock.callOrDefault(
+                nativeSender -> PeerConnectionJni.get().removeTrack(this, nativeSender), false),
+        false);
   }
 
   /**
@@ -1131,17 +1168,20 @@ public class PeerConnection {
     if (track == null) {
       throw new NullPointerException("No MediaStreamTrack specified for addTransceiver.");
     }
-    if (init == null) {
-      init = new RtpTransceiver.RtpTransceiverInit();
-    }
-    RtpTransceiver newTransceiver =
-        PeerConnectionJni.get()
-            .addTransceiverWithTrack(this, track.getNativeMediaStreamTrack(), init);
-    if (newTransceiver == null) {
-      throw new IllegalStateException("C++ addTransceiver failed.");
-    }
-    transceivers.add(newTransceiver);
-    return newTransceiver;
+    RtpTransceiver.RtpTransceiverInit initCopy =
+        (init == null) ? new RtpTransceiver.RtpTransceiverInit() : init;
+    return lifecycleLock.call(
+        () ->
+            track.lifecycleLock.call(
+                nativeTrack -> {
+                  RtpTransceiver newTransceiver =
+                      PeerConnectionJni.get().addTransceiverWithTrack(this, nativeTrack, initCopy);
+                  if (newTransceiver == null) {
+                    throw new IllegalStateException("C++ addTransceiver failed.");
+                  }
+                  transceivers.add(newTransceiver);
+                  return newTransceiver;
+                }));
   }
 
   public RtpTransceiver addTransceiver(MediaStreamTrack.MediaType mediaType) {
@@ -1153,23 +1193,33 @@ public class PeerConnection {
     if (mediaType == null) {
       throw new NullPointerException("No MediaType specified for addTransceiver.");
     }
-    if (init == null) {
-      init = new RtpTransceiver.RtpTransceiverInit();
-    }
-    RtpTransceiver newTransceiver =
-        PeerConnectionJni.get().addTransceiverOfType(this, mediaType, init);
-    if (newTransceiver == null) {
-      throw new IllegalStateException("C++ addTransceiver failed.");
-    }
-    transceivers.add(newTransceiver);
-    return newTransceiver;
+    RtpTransceiver.RtpTransceiverInit initCopy =
+        (init == null) ? new RtpTransceiver.RtpTransceiverInit() : init;
+    return lifecycleLock.call(
+        () -> {
+          RtpTransceiver newTransceiver =
+              PeerConnectionJni.get().addTransceiverOfType(this, mediaType, initCopy);
+          if (newTransceiver == null) {
+            throw new IllegalStateException("C++ addTransceiver failed.");
+          }
+          transceivers.add(newTransceiver);
+          return newTransceiver;
+        });
   }
 
   // Older, non-standard implementation of getStats.
   @Deprecated
   public boolean getStats(StatsObserver observer, @Nullable MediaStreamTrack track) {
-    return PeerConnectionJni.get()
-        .oldGetStats(this, observer, (track == null) ? 0 : track.getNativeMediaStreamTrack());
+    return callWithNative(
+        () -> {
+          if (track == null) {
+            return PeerConnectionJni.get().oldGetStats(this, observer, 0);
+          }
+          return track.lifecycleLock.callOrDefault(
+              nativeTrack -> PeerConnectionJni.get().oldGetStats(this, observer, nativeTrack),
+              false);
+        },
+        false);
   }
 
   /**
@@ -1177,44 +1227,53 @@ public class PeerConnection {
    * will replace old stats collection API when the new API has matured enough.
    */
   public void getStats(RTCStatsCollectorCallback callback) {
-    PeerConnectionJni.get().newGetStats(this, callback);
+    runWithNative(() -> PeerConnectionJni.get().newGetStats(this, callback));
   }
 
   /**
-   * Gets stats using the new stats collection API, see webrtc/api/stats/. These
-   * will replace old stats collection API when the new API has matured enough.
+   * Gets stats using the new stats collection API, see webrtc/api/stats/. These will replace old
+   * stats collection API when the new API has matured enough.
    */
   public void getStats(RtpSender sender, RTCStatsCollectorCallback callback) {
-    PeerConnectionJni.get().newGetStatsSender(this, sender.getNativeRtpSender(), callback);
+    runWithNative(
+        () ->
+            sender.lifecycleLock.runIfAlive(
+                nativeSender ->
+                    PeerConnectionJni.get().newGetStatsSender(this, nativeSender, callback)));
   }
 
   /**
-   * Gets stats using the new stats collection API, see webrtc/api/stats/. These
-   * will replace old stats collection API when the new API has matured enough.
+   * Gets stats using the new stats collection API, see webrtc/api/stats/. These will replace old
+   * stats collection API when the new API has matured enough.
    */
   public void getStats(RtpReceiver receiver, RTCStatsCollectorCallback callback) {
-    PeerConnectionJni.get().newGetStatsReceiver(this, receiver.getNativeRtpReceiver(), callback);
+    runWithNative(
+        () ->
+            receiver.lifecycleLock.runIfAlive(
+                nativeReceiver ->
+                    PeerConnectionJni.get().newGetStatsReceiver(this, nativeReceiver, callback)));
   }
 
   /**
-   * Limits the bandwidth allocated for all RTP streams sent by this
-   * PeerConnection. Pass null to leave a value unchanged.
+   * Limits the bandwidth allocated for all RTP streams sent by this PeerConnection. Pass null to
+   * leave a value unchanged.
    */
   public boolean setBitrate(Integer min, Integer current, Integer max) {
-    return PeerConnectionJni.get().setBitrate(this, min, current, max);
+    return callWithNative(() -> PeerConnectionJni.get().setBitrate(this, min, current, max), false);
   }
 
   /**
    * Starts recording an RTC event log.
    *
-   * Ownership of the file is transfered to the native code. If an RTC event
-   * log is already being recorded, it will be stopped and a new one will start
-   * using the provided file. Logging will continue until the stopRtcEventLog
-   * function is called. The max_size_bytes argument is ignored, it is added
-   * for future use.
+   * <p>Ownership of the file is transfered to the native code. If an RTC event log is already being
+   * recorded, it will be stopped and a new one will start using the provided file. Logging will
+   * continue until the stopRtcEventLog function is called. The max_size_bytes argument is ignored,
+   * it is added for future use.
    */
   public boolean startRtcEventLog(int file_descriptor, int max_size_bytes) {
-    return PeerConnectionJni.get().startRtcEventLog(this, file_descriptor, max_size_bytes);
+    return callWithNative(
+        () -> PeerConnectionJni.get().startRtcEventLog(this, file_descriptor, max_size_bytes),
+        false);
   }
 
   /**
@@ -1222,29 +1281,33 @@ public class PeerConnection {
    * recorded, this call will have no effect.
    */
   public void stopRtcEventLog() {
-    PeerConnectionJni.get().stopRtcEventLog(this);
+    runWithNative(() -> PeerConnectionJni.get().stopRtcEventLog(this));
   }
 
   // TODO(fischman): add support for DTMF-related methods once that API
   // stabilizes.
   public SignalingState signalingState() {
-    return PeerConnectionJni.get().signalingState(this);
+    return callWithNative(
+        () -> PeerConnectionJni.get().signalingState(this), SignalingState.CLOSED);
   }
 
   public IceConnectionState iceConnectionState() {
-    return PeerConnectionJni.get().iceConnectionState(this);
+    return callWithNative(
+        () -> PeerConnectionJni.get().iceConnectionState(this), IceConnectionState.CLOSED);
   }
 
   public PeerConnectionState connectionState() {
-    return PeerConnectionJni.get().connectionState(this);
+    return callWithNative(
+        () -> PeerConnectionJni.get().connectionState(this), PeerConnectionState.CLOSED);
   }
 
   public IceGatheringState iceGatheringState() {
-    return PeerConnectionJni.get().iceGatheringState(this);
+    return callWithNative(
+        () -> PeerConnectionJni.get().iceGatheringState(this), IceGatheringState.COMPLETE);
   }
 
   public void close() {
-    PeerConnectionJni.get().close(this);
+    runWithNative(() -> PeerConnectionJni.get().close(this));
   }
 
   /**
@@ -1264,9 +1327,15 @@ public class PeerConnection {
    * 3721</a> for more details.
    */
   public void dispose() {
+    if (lifecycleLock.isDisposed()) {
+      return;
+    }
     close();
     for (MediaStream stream : localStreams) {
-      PeerConnectionJni.get().removeLocalStream(this, stream.getNativeMediaStream());
+      runWithNative(
+          () ->
+              stream.lifecycleLock.runIfAlive(
+                  nativeStream -> PeerConnectionJni.get().removeLocalStream(this, nativeStream)));
       stream.dispose();
     }
     localStreams.clear();
@@ -1282,17 +1351,18 @@ public class PeerConnection {
     }
     transceivers.clear();
     receivers.clear();
-    PeerConnectionJni.get().freeOwnedPeerConnection(nativePeerConnection);
+    lifecycleLock.dispose(
+        ptr -> PeerConnectionJni.get().freeOwnedPeerConnection(ptr));
   }
 
   /** Returns a pointer to the native webrtc::PeerConnectionInterface. */
   public long getNativePeerConnection() {
-    return PeerConnectionJni.get().getNativePeerConnection(this);
+    return callWithNative(() -> PeerConnectionJni.get().getNativePeerConnection(this), 0L);
   }
 
   @CalledByNative
   long getNativeOwnedPeerConnection() {
-    return nativePeerConnection;
+    return lifecycleLock.getNativePointer();
   }
 
   public static long createNativePeerConnectionObserver(Observer observer) {

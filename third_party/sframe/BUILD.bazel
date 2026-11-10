@@ -1,0 +1,23 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "sframe",
+    srcs = glob([
+        "src/*.cpp",
+        "src/*.h",
+    ]),
+    hdrs = glob([
+        "src/include/sframe/*.h",
+        "src/include/gsl-lite/*.hpp",
+    ]),
+    copts = select({
+        "@platforms//os:windows": ["/GR-"],
+        "//conditions:default": ["-fno-rtti"],
+    }),
+    local_defines = ["BORINGSSL"],
+    deps = [
+        "@boringssl//:crypto",
+    ],
+)

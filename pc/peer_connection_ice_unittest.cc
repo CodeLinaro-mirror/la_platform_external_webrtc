@@ -17,9 +17,13 @@
 #include <utility>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
 #include "absl/strings/string_view.h"
+#include "api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/candidate.h"
 #include "api/create_modular_peer_connection_factory.h"
+#include "api/create_peerconnection_factory.h"
 #include "api/enable_media_with_defaults.h"
 #include "api/environment/environment.h"
 #include "api/ice_transport_interface.h"
@@ -30,37 +34,6 @@
 #include "api/rtc_error.h"
 #include "api/scoped_refptr.h"
 #include "api/units/time_delta.h"
-#include "p2p/base/ice_transport_internal.h"
-#include "p2p/base/p2p_constants.h"
-#include "p2p/base/port_allocator.h"
-#include "p2p/base/transport_description.h"
-#include "p2p/base/transport_info.h"
-#include "p2p/test/fake_port_allocator.h"
-#include "pc/dtls_transport.h"
-#include "pc/media_session.h"
-#include "pc/peer_connection.h"
-#include "pc/peer_connection_wrapper.h"
-#include "pc/rtp_transceiver.h"
-#include "pc/session_description.h"
-#include "rtc_base/checks.h"
-#include "rtc_base/internal/default_socket_server.h"
-#include "rtc_base/ip_address.h"
-#include "rtc_base/logging.h"
-#include "rtc_base/net_helper.h"
-#include "rtc_base/socket_address.h"
-#include "rtc_base/socket_server.h"
-#include "rtc_base/thread.h"
-#include "test/create_test_environment.h"
-#include "test/create_test_field_trials.h"
-#include "test/gtest.h"
-#include "test/run_loop.h"
-#ifdef WEBRTC_ANDROID
-#include "pc/test/android_test_initializer.h"
-#endif
-#include "api/audio_codecs/builtin_audio_decoder_factory.h"
-#include "api/audio_codecs/builtin_audio_encoder_factory.h"
-#include "api/create_peerconnection_factory.h"
-#include "api/uma_metrics.h"
 #include "api/video_codecs/video_decoder_factory_template.h"
 #include "api/video_codecs/video_decoder_factory_template_dav1d_adapter.h"
 #include "api/video_codecs/video_decoder_factory_template_libvpx_vp8_adapter.h"
@@ -71,14 +44,38 @@
 #include "api/video_codecs/video_encoder_factory_template_libvpx_vp8_adapter.h"
 #include "api/video_codecs/video_encoder_factory_template_libvpx_vp9_adapter.h"
 #include "api/video_codecs/video_encoder_factory_template_open_h264_adapter.h"
+#include "p2p/base/ice_transport_internal.h"
+#include "p2p/base/p2p_constants.h"
+#include "p2p/base/port_allocator.h"
+#include "p2p/base/transport_description.h"
+#include "p2p/base/transport_info.h"
+#include "p2p/test/fake_port_allocator.h"
+#include "pc/dtls_transport.h"
+#include "pc/media_session.h"
+#include "pc/peer_connection.h"
 #include "pc/peer_connection_proxy.h"
+#include "pc/peer_connection_wrapper.h"
+#include "pc/rtp_transceiver.h"
+#include "pc/session_description.h"
 #include "pc/test/fake_audio_capture_module.h"
 #include "pc/test/mock_peer_connection_observers.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/fake_network.h"
+#include "rtc_base/internal/default_socket_server.h"
+#include "rtc_base/ip_address.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/net_helper.h"
+#include "rtc_base/socket_address.h"
+#include "rtc_base/socket_server.h"
 #include "rtc_base/strings/string_builder.h"
+#include "rtc_base/thread.h"
 #include "rtc_base/virtual_socket_server.h"
 #include "system_wrappers/include/metrics.h"
+#include "test/create_test_environment.h"
+#include "test/create_test_field_trials.h"
 #include "test/gmock.h"
+#include "test/gtest.h"
+#include "test/run_loop.h"
 
 namespace webrtc {
 
@@ -162,13 +159,8 @@ class PeerConnectionIceBaseTest : public ::testing::Test {
   explicit PeerConnectionIceBaseTest(SdpSemantics sdp_semantics)
       : env_(CreateTestEnvironment()),
         network_thread_(new Thread(&vss_)),
-        worker_thread_(Thread::Create()),
         sdp_semantics_(sdp_semantics) {
     RTC_CHECK(network_thread_->Start());
-    RTC_CHECK(worker_thread_->Start());
-#ifdef WEBRTC_ANDROID
-    InitializeAndroidObjects();
-#endif
   }
 
   WrapperPtr CreatePeerConnection() {
@@ -187,7 +179,6 @@ class PeerConnectionIceBaseTest : public ::testing::Test {
                                   absl::string_view field_trials) {
     PeerConnectionFactoryDependencies pcf_deps;
     pcf_deps.network_thread = network_thread_.get();
-    pcf_deps.worker_thread = worker_thread_.get();
     pcf_deps.signaling_thread = Thread::Current();
     pcf_deps.socket_factory = &vss_;
     auto network_manager =
@@ -352,7 +343,6 @@ class PeerConnectionIceBaseTest : public ::testing::Test {
   test::RunLoop main_;
   VirtualSocketServer vss_;
   std::unique_ptr<Thread> network_thread_;
-  std::unique_ptr<Thread> worker_thread_;
   const SdpSemantics sdp_semantics_;
 };
 
@@ -538,9 +528,6 @@ TEST_P(PeerConnectionIceTest, CannotAddCandidateWhenRemoteDescriptionNotSet) {
   caller->SetLocalDescription(std::move(offer));
 
   EXPECT_FALSE(caller->pc()->AddIceCandidate(jsep_candidate.get()));
-  EXPECT_METRIC_THAT(
-      metrics::Samples("WebRTC.PeerConnection.AddIceCandidate"),
-      ElementsAre(Pair(kAddIceCandidateFailNoRemoteDescription, 2)));
 }
 
 TEST_P(PeerConnectionIceTest, CannotAddCandidateWhenPeerConnectionClosed) {
@@ -882,6 +869,64 @@ TEST_P(PeerConnectionIceTest,
   // As soon as it does, AddIceCandidate() will execute without delay, so it
   // must also have completed.
   EXPECT_TRUE(operation_completed);
+}
+
+TEST_P(PeerConnectionIceTest, AsyncAddIceCandidateCompletesInOrder) {
+  auto candidate = CreateLocalUdpCandidate(SocketAddress("1.1.1.1", 1111));
+
+  auto caller = CreatePeerConnectionWithAudioVideo();
+  auto callee = CreatePeerConnectionWithAudioVideo();
+
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
+
+  // Chain an operation that will block both AddIceCandidate() calls, so that
+  // they are queued behind it rather than executing immediately.
+  auto answer_observer = make_ref_counted<MockCreateSessionDescriptionObserver>(
+      main_.QuitClosure());
+  callee->pc()->CreateAnswer(answer_observer.get(), RTCOfferAnswerOptions());
+
+  std::vector<int> completion_order;
+  for (int i = 0; i < 2; ++i) {
+    callee->pc()->AddIceCandidate(
+        callee->CreateJsepCandidateForFirstTransport(&candidate),
+        [&completion_order, i](RTCError result) {
+          completion_order.push_back(i);
+        });
+  }
+  ASSERT_THAT(completion_order, IsEmpty());
+
+  main_.Run();
+  // The operations chain runs them in order, so they must also complete in
+  // order.
+  EXPECT_THAT(completion_order, ElementsAre(0, 1));
+}
+
+TEST_P(PeerConnectionIceTest,
+       AsyncAddIceCandidateWaitsForResultDeliveryBeforeStartingNextOperation) {
+  auto candidate = CreateLocalUdpCandidate(SocketAddress("1.1.1.1", 1111));
+
+  auto caller = CreatePeerConnectionWithAudioVideo();
+  auto callee = CreatePeerConnectionWithAudioVideo();
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
+
+  absl::AnyInvocable<void() &&> operation_complete_callback;
+  callee->pc()->AddIceCandidate(
+      callee->CreateJsepCandidateForFirstTransport(&candidate),
+      [&operation_complete_callback](
+          RTCError result, absl::AnyInvocable<void() &&> complete_callback) {
+        EXPECT_TRUE(result.ok());
+        operation_complete_callback = std::move(complete_callback);
+      });
+
+  ASSERT_TRUE(operation_complete_callback);
+  auto queued_observer = make_ref_counted<MockCreateSessionDescriptionObserver>(
+      main_.QuitClosure());
+  callee->pc()->CreateOffer(queued_observer.get(), RTCOfferAnswerOptions());
+  EXPECT_FALSE(queued_observer->called());
+
+  std::move(operation_complete_callback)();
+  main_.Run();
+  EXPECT_TRUE(queued_observer->called());
 }
 
 TEST_P(PeerConnectionIceTest,
@@ -1482,17 +1527,15 @@ INSTANTIATE_TEST_SUITE_P(PeerConnectionIceTest,
 class PeerConnectionIceConfigTest : public ::testing::Test {
  public:
   PeerConnectionIceConfigTest()
-      : worker_thread_(Thread::Create()),
-        socket_server_(CreateDefaultSocketServer()),
+      : socket_server_(CreateDefaultSocketServer()),
         network_thread_(new Thread(socket_server_.get())) {
     RTC_CHECK(network_thread_->Start());
-    RTC_CHECK(worker_thread_->Start());
   }
 
  protected:
   void SetUp() override {
     pc_factory_ = CreatePeerConnectionFactory(
-        network_thread_.get(), worker_thread_.get(), Thread::Current(),
+        network_thread_.get(), Thread::Current(),
         FakeAudioCaptureModule::Create(), CreateBuiltinAudioEncoderFactory(),
         CreateBuiltinAudioDecoderFactory(),
         std::make_unique<VideoEncoderFactoryTemplate<
@@ -1519,7 +1562,6 @@ class PeerConnectionIceConfigTest : public ::testing::Test {
   }
 
   test::RunLoop main_thread_;
-  std::unique_ptr<Thread> worker_thread_;
   std::unique_ptr<SocketServer> socket_server_;
   std::unique_ptr<Thread> network_thread_;
   scoped_refptr<PeerConnectionFactoryInterface> pc_factory_ = nullptr;
@@ -1626,6 +1668,47 @@ TEST_P(PeerConnectionIceTest, IceCredentialsCreateAnswer) {
     EXPECT_EQ(transport_info->description.ice_ufrag, credentials[0].ufrag);
     EXPECT_EQ(transport_info->description.ice_pwd, credentials[0].pwd);
   }
+}
+
+// Applies an offer and its answer in the same task, so that the remote answer
+// is applied before the pooled ICE credentials that gathering for the offer
+// reports arrive. Those credentials can include the ones the transport uses,
+// since the transport relabels whichever pooled session it takes. They must not
+// be used once the answer has discarded the candidate pool, otherwise the ICE
+// restart offer below would keep the current credentials.
+TEST_P(PeerConnectionIceTest, IceRestartAfterRemoteAnswerChangesCredentials) {
+  RTCConfiguration config;
+  config.ice_candidate_pool_size = 2;
+  auto caller = CreatePeerConnection(config);
+  caller->AddAudioTrack("a");
+  auto callee = CreatePeerConnection();
+
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
+  ASSERT_TRUE(offer);
+  ASSERT_TRUE(callee->SetRemoteDescription(offer->Clone()));
+  std::unique_ptr<SessionDescriptionInterface> answer = callee->CreateAnswer();
+  ASSERT_TRUE(answer);
+
+  auto sld_observer = make_ref_counted<FakeSetLocalDescriptionObserver>();
+  auto srd_observer = make_ref_counted<FakeSetRemoteDescriptionObserver>();
+  caller->pc()->SetLocalDescription(std::move(offer), sld_observer);
+  caller->pc()->SetRemoteDescription(std::move(answer), srd_observer);
+  ASSERT_TRUE(sld_observer->called());
+  EXPECT_TRUE(sld_observer->error().ok());
+  ASSERT_TRUE(srd_observer->called());
+  EXPECT_TRUE(srd_observer->error().ok());
+  // Run the tasks posted to the network thread, then their replies.
+  caller->network_thread()->BlockingCall([] {});
+  main_.Flush();
+
+  RTCOfferAnswerOptions options;
+  options.ice_restart = true;
+  std::unique_ptr<SessionDescriptionInterface> restart_offer =
+      caller->CreateOffer(options);
+  ASSERT_TRUE(restart_offer);
+  EXPECT_NE(GetFirstTransportDescription(restart_offer.get())->ice_ufrag,
+            GetFirstTransportDescription(caller->pc()->local_description())
+                ->ice_ufrag);
 }
 
 // Regression test for https://bugs.chromium.org/p/webrtc/issues/detail?id=4728

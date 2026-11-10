@@ -373,6 +373,18 @@ cc_library(
 )
 
 cc_library(
+    name = "tflite_model_handle",
+    hdrs = ["tflite_model_handle.h"],
+    compatible_with = ["//buildenv/target:non_prod"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api:ref_count",
+        "//api:refcountedbase",
+        "@tflite//:tflite_standalone",
+    ],
+)
+
+cc_library(
     name = "neural_residual_echo_estimator_creator",
     srcs = ["neural_residual_echo_estimator_creator.cc"],
     hdrs = ["neural_residual_echo_estimator_creator.h"],
@@ -416,7 +428,10 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//api:scoped_refptr",
         "//api/audio:neural_residual_echo_estimator_api",
+        "//api/audio:tflite_model_handle",
+        "//api/environment",
         "//modules/audio_processing/aec3/neural_residual_echo_estimator:neural_residual_echo_estimator_impl",
         "//rtc_base:checks",
         "//rtc_base/system:rtc_export",

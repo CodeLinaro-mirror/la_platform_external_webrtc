@@ -41,7 +41,6 @@ cc_library(
     deps = [
         "//api/audio_codecs:audio_codecs_api",
         "//api/neteq:neteq_api",
-        "@abseil-cpp//absl/base:core_headers",
     ],
 )
 
